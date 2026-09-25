@@ -279,7 +279,7 @@ static void draw_hud(void) {
     gfx_round_rect(bx, by, bw, bh, 4, 0, 200);
     int fw = (int)(prog / 100 * (bw - 2));
     if (fw > 0) {
-      color_t c = O.practice ? rgb(0, 255, 255) : rgb(0, 255, 0);
+      color_t c = O.p1 ? O.p1 : 0xffff;   /* the player's colour, as in 2.2 */
       int w = fw < 6 ? 6 : fw;
       gfx_round_rect(bx + 1, by + 1, w, bh - 2, 3, c, 256);
       gfx_add(bx + 3, by + 2, w - 4, 1, 0xffff, 90);
