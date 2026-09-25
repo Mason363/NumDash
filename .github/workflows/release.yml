@@ -1,9 +1,9 @@
 name: Release
-# Publishes NumDash.nwa as a GitHub release. Runs when VERSION changes on the
-# development branch (tag v<VERSION>), when a v* tag is pushed, or by hand.
+# Publishes NumDash.nwa as a GitHub release. Runs when VERSION changes on
+# main (tag v<VERSION>), when a v* tag is pushed, or by hand.
 on:
   push:
-    branches: ['claude/admiring-carson-w3n1t6']
+    branches: ['main']
     paths: ['VERSION']
     tags: ['v*']
   workflow_dispatch:
