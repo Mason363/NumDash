@@ -1,0 +1,22 @@
+name: Build
+on:
+  push:
+  pull_request:
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libsdl2-dev
+      - run: npm ci
+      - run: make test
+      - run: make build check
+      - run: for i in 1 2 3 4 5 6 7; do ./build/tests --replay $((i-1)) tests/replays/level${i}.txt; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NumDash-nwa
+          path: build/numdash.nwa
