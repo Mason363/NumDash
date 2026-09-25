@@ -133,37 +133,69 @@ static inline void put(uint16_t *p, color_t c, unsigned a32, int mode) {
   else *p = a32 >= 32 ? c : px_mix(*p, c, a32);
 }
 
+/* Discs and rings are processed as per-row spans; only the one-pixel
+ * anti-aliased edge needs a square root. */
 void gfx_disc(int cx16, int cy16, int r16, color_t c, unsigned alpha, int mode) {
   if (r16 <= 0 || !alpha) return;
   float cx = cx16 / 16.f, cy = cy16 / 16.f, r = r16 / 16.f;
   int x = (int)floorf(cx - r - 1), y = (int)floorf(cy - r - 1), w = (int)(2 * r + 3), h = w;
   if (!clip_rect(&x, &y, &w, &h)) return;
+  const unsigned full = a32_of(alpha);
+  const float ro = r + .5f, ri = r - .5f;
   for (int j = y; j < y + h; j++) {
-    float dy = j + .5f - cy;
-    uint16_t *p = pix(x, j);
-    for (int i = 0; i < w; i++) {
-      float dx = x + i + .5f - cx, d = sqrtf(dx * dx + dy * dy);
-      float cov = r - d + .5f;
+    float dy = j + .5f - cy, dy2 = dy * dy;
+    if (dy2 >= ro * ro) continue;
+    float half = sqrtf(ro * ro - dy2);
+    int i0 = (int)floorf(cx - half - .5f), i1 = (int)ceilf(cx + half + .5f);
+    if (i0 < x) i0 = x;
+    if (i1 > x + w) i1 = x + w;
+    int k0 = i1, k1 = i1;   /* fully covered interior */
+    if (ri > 0 && dy2 < ri * ri) {
+      float in = sqrtf(ri * ri - dy2);
+      k0 = (int)ceilf(cx - in + .5f);
+      k1 = (int)floorf(cx + in - .5f) + 1;
+      if (k0 < i0) k0 = i0;
+      if (k1 > i1) k1 = i1;
+      if (k1 < k0) k1 = k0;
+    }
+    uint16_t *p = pix(0, j);
+    for (int i = i0; i < i1; i++) {
+      if (i == k0 && k1 > k0) {
+        for (; i < k1; i++) put(p + i, c, full, mode);
+        if (i >= i1) break;
+      }
+      float dx = i + .5f - cx, d = sqrtf(dx * dx + dy2), cov = r - d + .5f;
       if (cov <= 0) continue;
       if (cov > 1) cov = 1;
       put(p + i, c, a32_of((unsigned)(cov * alpha)), mode);
     }
   }
 }
+
 void gfx_ring(int cx16, int cy16, int r16, int t16, color_t c, unsigned alpha, int mode) {
   if (r16 <= 0 || t16 <= 0 || !alpha) return;
   float cx = cx16 / 16.f, cy = cy16 / 16.f, r = r16 / 16.f, t = t16 / 32.f;
   int x = (int)floorf(cx - r - t - 1), y = (int)floorf(cy - r - t - 1), w = (int)(2 * (r + t) + 3), h = w;
   if (!clip_rect(&x, &y, &w, &h)) return;
+  const float ro = r + t + .5f, ri = r - t - .5f;
   for (int j = y; j < y + h; j++) {
-    float dy = j + .5f - cy;
-    uint16_t *p = pix(x, j);
-    for (int i = 0; i < w; i++) {
-      float dx = x + i + .5f - cx, d = sqrtf(dx * dx + dy * dy);
-      float cov = t - fabsf(d - r) + .5f;
-      if (cov <= 0) continue;
-      if (cov > 1) cov = 1;
-      put(p + i, c, a32_of((unsigned)(cov * alpha)), mode);
+    float dy = j + .5f - cy, dy2 = dy * dy;
+    if (dy2 >= ro * ro) continue;
+    float out = sqrtf(ro * ro - dy2), in = ri > 0 && dy2 < ri * ri ? sqrtf(ri * ri - dy2) : -1;
+    /* the band is [cx-out, cx-in] and [cx+in, cx+out] (one span if in < 0) */
+    float spans[2][2] = {{cx - out, in >= 0 ? cx - in : cx + out}, {cx + in, cx + out}};
+    int nspans = in >= 0 ? 2 : 1;
+    uint16_t *p = pix(0, j);
+    for (int sidx = 0; sidx < nspans; sidx++) {
+      int i0 = (int)floorf(spans[sidx][0] - .5f), i1 = (int)ceilf(spans[sidx][1] + .5f);
+      if (i0 < x) i0 = x;
+      if (i1 > x + w) i1 = x + w;
+      for (int i = i0; i < i1; i++) {
+        float dx = i + .5f - cx, d = sqrtf(dx * dx + dy2), cov = t - fabsf(d - r) + .5f;
+        if (cov <= 0) continue;
+        if (cov > 1) cov = 1;
+        put(p + i, c, a32_of((unsigned)(cov * alpha)), mode);
+      }
     }
   }
 }
@@ -296,13 +328,15 @@ void gfx_sprite(int spr, int x, int y, int xf, color_t tint, unsigned alpha, int
   }
 }
 
+/* Rotated / scaled sprite with bilinear filtering. The inverse transform is
+ * stepped in 16.16 fixed point; each row is clipped to the span where the
+ * sample falls inside the texture. */
 void gfx_sprite_ex(int spr, int x16, int y16, int ang16, int scale256, int flips, color_t tint, unsigned alpha, int mode) {
   if (spr < 0 || !alpha || scale256 <= 0) return;
   const Sprite *s = &sprites[spr];
   float sc = scale256 / 256.f, ang = ang16 / 16.f * 3.14159265f / 180.f;
   float cs = cosf(ang), sn = sinf(ang), cx = x16 / 16.f, cy = y16 / 16.f;
   float w = s->w, h = s->h, ax = s->ax, ay = s->ay;
-  /* bounding box of the transformed sprite */
   float corners[4][2] = {{-ax, -ay}, {w - ax, -ay}, {-ax, h - ay}, {w - ax, h - ay}};
   float mnx = 1e9f, mny = 1e9f, mxx = -1e9f, mxy = -1e9f;
   for (int k = 0; k < 4; k++) {
@@ -315,29 +349,53 @@ void gfx_sprite_ex(int spr, int x16, int y16, int ang16, int scale256, int flips
   Sampler sm;
   sampler_init(&sm, spr, tint, 256);
   float inv = 1.f / sc;
+  /* u = (dx*cs + dy*sn)*inv + ax - .5, v = (-dx*sn + dy*cs)*inv + ay - .5 */
+  float dudx = cs * inv, dvdx = -sn * inv, dudy = sn * inv, dvdy = cs * inv;
+  float u0 = ax - .5f, v0 = ay - .5f;
+  if (flips & XF_FLIPX) { dudx = -dudx; dudy = -dudy; u0 = w - 1 - u0; }
+  if (flips & XF_FLIPY) { dvdx = -dvdx; dvdy = -dvdy; v0 = h - 1 - v0; }
+  const int W = s->w, H = s->h;
+  const int32_t sdu = (int32_t)(dudx * 65536), sdv = (int32_t)(dvdx * 65536);
+  const unsigned al = alpha > 256 ? 256 : alpha;
   for (int j = by; j < by + bh; j++) {
-    uint16_t *p = pix(bx, j);
-    for (int i = 0; i < bw; i++) {
-      float dx = bx + i + .5f - cx, dy = j + .5f - cy;
-      float u = (dx * cs + dy * sn) * inv + ax - .5f, v = (-dx * sn + dy * cs) * inv + ay - .5f;
-      if (flips & XF_FLIPX) u = w - 1 - u;
-      if (flips & XF_FLIPY) v = h - 1 - v;
-      if (u <= -1 || v <= -1 || u >= w || v >= h) continue;
-      int u0 = (int)floorf(u), v0 = (int)floorf(v);
-      float fu = u - u0, fv = v - v0, ta = 0, tr = 0, tg = 0, tb = 0;
+    float dx0 = bx + .5f - cx, dy = j + .5f - cy;
+    float uf = u0 + dx0 * dudx + dy * dudy, vf = v0 + dx0 * dvdx + dy * dvdy;
+    /* span where -1 < u < W and -1 < v < H */
+    float lo = 0, hi = (float)bw;
+    if (dudx > 1e-6f) { float a = (-1 - uf) / dudx, b = (W - uf) / dudx; if (a > lo) lo = a; if (b < hi) hi = b; }
+    else if (dudx < -1e-6f) { float a = (W - uf) / dudx, b = (-1 - uf) / dudx; if (a > lo) lo = a; if (b < hi) hi = b; }
+    else if (uf <= -1 || uf >= W) continue;
+    if (dvdx > 1e-6f) { float a = (-1 - vf) / dvdx, b = (H - vf) / dvdx; if (a > lo) lo = a; if (b < hi) hi = b; }
+    else if (dvdx < -1e-6f) { float a = (H - vf) / dvdx, b = (-1 - vf) / dvdx; if (a > lo) lo = a; if (b < hi) hi = b; }
+    else if (vf <= -1 || vf >= H) continue;
+    int i0 = (int)ceilf(lo), i1 = (int)ceilf(hi);
+    if (i0 < 0) i0 = 0;
+    if (i1 > bw) i1 = bw;
+    if (i0 >= i1) continue;
+    int32_t u = (int32_t)((uf + i0 * dudx) * 65536), v = (int32_t)((vf + i0 * dvdx) * 65536);
+    uint16_t *p = pix(bx + i0, j);
+    for (int i = i0; i < i1; i++, p++, u += sdu, v += sdv) {
+      int32_t uu = u + 65536, vv = v + 65536;          /* offset so that -1 < u maps to >= 0 */
+      if (uu < 0 || vv < 0) continue;
+      int ui = (uu >> 16) - 1, vi = (vv >> 16) - 1;
+      unsigned fu = (unsigned)(uu >> 8) & 255, fv = (unsigned)(vv >> 8) & 255;
+      unsigned ta = 0, tr = 0, tg = 0, tb = 0;
       for (int k = 0; k < 4; k++) {
-        int uu = u0 + (k & 1), vv = v0 + (k >> 1);
-        if (uu < 0 || vv < 0 || uu >= s->w || vv >= s->h) continue;
-        float wt = ((k & 1) ? fu : 1 - fu) * ((k >> 1) ? fv : 1 - fv);
+        int x = ui + (k & 1), y = vi + (k >> 1);
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        unsigned wt = ((k & 1) ? fu : 256 - fu) * ((k >> 1) ? fv : 256 - fv) >> 8;
         uint16_t c;
-        unsigned a = sample(&sm, uu, vv, &c);
-        float aw = a * wt;
-        ta += aw; tr += c_r(c) * aw; tg += c_g(c) * aw; tb += c_b(c) * aw;
+        unsigned a = sample(&sm, x, y, &c) * wt;
+        if (!a) continue;
+        ta += a;
+        tr += ((c >> 11) & 31) * a;
+        tg += ((c >> 5) & 63) * a;
+        tb += (c & 31) * a;
       }
-      if (ta < .5f) continue;
-      color_t c = rgb((unsigned)(tr / ta), (unsigned)(tg / ta), (unsigned)(tb / ta));
-      unsigned a32 = (unsigned)(ta * alpha / 256.f + .5f);
-      put(p + i, c, a32 > 32 ? 32 : a32, mode);
+      if (ta < 128) continue;
+      color_t c = (color_t)(((tr / ta) << 11) | ((tg / ta) << 5) | (tb / ta));
+      unsigned a32 = (ta * al + 32768) >> 16;
+      put(p, c, a32 > 32 ? 32 : a32, mode);
     }
   }
 }

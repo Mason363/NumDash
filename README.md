@@ -1,49 +1,66 @@
 # NumDash
 
-NumDash is a 320 × 240, native NumWorks `.nwa` rhythm platformer for the N0120. It includes seven playable levels, cube and ship movement, portals, pads, rings, gravity changes, practice checkpoints, progress and coins, and a three-slot level editor. Its menus, progress cards, playfield, pause and completion overlays, icons, effects, and editor palette are redrawn for the calculator screen in Geometry Dash's visual style.
+A Geometry Dash recreation for NumWorks calculators, built as a native `.nwa` app for the N0120 (320 × 240, STM32H7).
 
-The first four courses use the object positions, IDs, rotations, and color triggers from the original **Stereo Madness**, **Back on Track**, **Polargeist**, and **Dry Out** level exports. Their geometry is sourced from [gd3ds `romfs/main_levels`](https://github.com/AleFunky/gd3ds/tree/14ce4cf1f634ce70dc1340b132f9aef703167db7/romfs/main_levels); the SHA-256 hashes and object counts are in [`levels/manifest.json`](levels/manifest.json). **Neon Circuit**, **Skyline**, and **Afterglow** are original courses built for the calculator's screen and controls.
+It plays the first seven official levels (**Stereo Madness**, **Back on Track**, **Polargeist**, **Dry Out**, **Base After Base**, **Can't Let Go** and **Jumper**) with their original object layouts, colour changes and secret coins, using the Geometry Dash 2.x cube and ship physics. The menus, pause screen, level-complete sequence and editor are laid out after the original game.
 
-This is a calculator adaptation, not a bit-for-bit port of Geometry Dash. The level geometry is sourced from the exports, but decoration, collision shapes, visual effects, and some physics behavior are simplified for the 320 × 240 display and N0120 hardware. The EADK interface used by native NumWorks apps does not provide game audio, so there is no original soundtrack; a visual floor pulse follows each level's BPM.
+![Main menu, level select, gameplay and level complete](docs/screens.png)
 
 ## Install
 
-Download `NumDash.nwa` from the release or build it below. On a compatible N0120 with external applications enabled, connect the calculator by USB and upload the `.nwa` through the [NumWorks app manager](https://my.numworks.com/apps). Select **NumDash** on the calculator. This file is a native app; it is not a Python script.
+1. Download **`NumDash.nwa`** from the [latest release](https://github.com/mason363/numdash/releases/latest).
+2. Connect the calculator by USB and open the [NumWorks app manager](https://my.numworks.com/apps).
+3. Upload `NumDash.nwa`, then open **NumDash** from the calculator's home screen.
 
-Progress and editor levels are saved as `numdash.ndd` in Epsilon's record storage. Version 3 stores custom objects in eight bytes each; existing version 2 saves remain readable. The app validates the N0120 firmware header, RAM range, storage magic, and record structure before writing. If storage is unavailable or differs from the supported layout, the app remains playable but displays a save failure notice. The simulator and tests cannot establish performance or storage reliability on every physical N0120 firmware version.
+The app is native code, not a Python script. It needs a firmware that accepts third-party apps (the N0120 with official Epsilon does).
 
 ## Controls
 
-| Location | Keys | Action |
+| Where | Key | Action |
 | --- | --- | --- |
-| Menus | Arrows, OK/EXE, Back | Navigate, select, return |
-| Level select | Toolbox | Practice mode |
-| Gameplay | OK, EXE, Up | Jump or hold to fly; tap a ring to activate it |
-| Gameplay | Back | Pause |
-| Practice | 0, Backspace | Set or remove checkpoint |
-| Editor | Arrows, OK, EXE | Move grid cursor, place object, playtest |
-| Editor | 0 | Cycle Build, Edit, Delete modes. OK places, rotates, or deletes in the selected mode |
-| Editor | Toolbox or +, − | Next or previous object |
-| Editor | Shift, Backspace, Alpha | Rotate, erase, undo last edit |
-| Editor | X,N,T; Var; Ln | Pick object; save; theme, pulse BPM, and level length |
-| Editor | Shift+0, Back | Help; save and exit |
+| Everywhere | Arrows, OK or EXE, Back | Move, select, go back |
+| Everywhere | Home | Save and quit |
+| Playing | OK, EXE or Up | Jump; hold to keep jumping or to fly the ship; tap on an orb |
+| Playing | Back | Pause (resume, practice mode, level select, restart) |
+| Practice mode | 0 / Backspace | Place / remove a checkpoint |
+| Main menu | Back | Quit dialog |
+| Editor | Arrows, OK | Move the cursor, use the current tool |
+| Editor | 0 | Build / Edit / Delete |
+| Editor | + − or Toolbox | Next / previous object |
+| Editor | Shift, x,n,t | Rotate the brush, copy the object under the cursor |
+| Editor | Alpha, Backspace | Undo, delete |
+| Editor | Var, ln, EXE, Back | Save, level settings, playtest, save and exit |
 
-The editor places up to 384 objects per level across three slots. It includes blocks, spikes, pads, rings, portals, gravity changes, and coins. Moving the cursor beyond the end grows the level automatically, and level length can also be adjusted in Level Settings.
+## What is recreated
 
-## Build and test
+- **Physics**: the 2.x cube and ship at 240 steps per second, with the original gravity, jump, pad, orb, portal and speed constants, buffered jumps, ceiling rules and the end-of-level fly-in. Every built-in level is verified completable by a recorded input replay in `tests/replays/`.
+- **Levels**: object positions, rotations, colour triggers, fade-in effects and secret coins come from the official level exports (see [`levels/manifest.json`](levels/manifest.json) for sources and hashes).
+- **Look**: the scrolling background and ground, block glow, pulsing orbs and rods, portals, particles, circle effects, the player trail, the "Attempt N" label, the progress bar and percentage.
+- **Screens**: main menu with the icon running across it and the colour cycle; level select pages with difficulty faces, stars, coins and progress bars; pause menu; "New Best!" popup; the level-complete light rays, rings, fireworks and the window that drops in on chains; practice mode with checkpoints; icon kit colours; settings, stats and how-to-play popups; a "My Levels" list and an editor.
 
-Requirements: Python 3, Node.js/npm, `arm-none-eabi-gcc`, and `make`. SDL2 and `sdl2-config` are needed only for the desktop simulator.
+All artwork is drawn procedurally by the scripts in `tools/` in the style of the original; no files from the game are included. Text uses two SIL Open Font License typefaces (Rammetto One and Nunito), see [`LICENSES`](LICENSES). NumWorks apps cannot play sound, so there is no music; objects pulse to each level's tempo instead.
+
+## Saves
+
+Progress, settings and icon colours live in one 192-byte record, `numdash.nds`; each custom level has its own record, `numdash1.ndl` to `numdash3.ndl` (about 5 bytes per object). Epsilon keeps a pointer to the record it read last, so NumDash never moves another record: it rewrites its own records in place, appends new ones, and only resizes a record that is the last one in storage. Saves from the previous NumDash release (`numdash.ndd`) are converted on first launch.
+
+## Performance
+
+The screen is rendered in 24-line strips straight to the LCD (15 KB of buffer instead of a 150 KB framebuffer), and strips that did not change are not sent. Physics runs at a fixed 240 Hz independent of the frame rate, and short key presses made while a frame is being sent are still registered. When a frame fits in the LCD refresh, the app waits for the vertical blank to avoid tearing. The app uses about 115 KB of RAM and 160 KB of flash. The **Low detail** setting removes decorations and glow.
+
+## Build
+
+Requirements: `make`, `arm-none-eabi-gcc`, Node.js (for `nwlink`), and SDL2 for the desktop version.
 
 ```sh
 npm ci
-make build check
-make test
-make simulator
-./build/numdash-sim
+make build check     # build/numdash.nwa, linked and checked with nwlink
+make test            # unit tests, app flow tests and the seven level replays
+make run             # desktop version (arrows, Space/Enter to jump, Esc = Back)
 ```
 
-The native app is `build/numdash.nwa`. `make check` also validates and extracts it with `nwlink`. To regenerate the built-in object arrays from the checked-in `.gmd` exports, run `make levels`. The generated `src/levels.c` is checked in so an ordinary build does not require the generator.
+The generated sources (`src/assets.c`, `src/leveldata.c`, `src/objdefs.c`) are checked in. `make assets` and `make levels` regenerate them (Python 3 with numpy and Pillow; the fonts are downloaded and verified by hash). `make epsilon-app` builds `build/numdash.nwb` for the official Epsilon simulator (`epsilon.bin --nwb build/numdash.nwb`), and `./build/tests --shots DIR` renders every screen to images.
 
-For the official Epsilon desktop simulator, build Epsilon separately, then run `make epsilon-app` and launch Epsilon with `--nwb /absolute/path/to/build/numdash.nwb`. The native simulator does not emulate the N0120 firmware's raw storage arena; save validation is covered by the desktop test suite.
+## Credits
 
-The engine advances at a fixed 240 Hz and targets 30 frames per second on the N0120 (60 in the desktop simulator). A 4-bit indexed framebuffer uses 37.5 KiB of RAM. On hardware, the presenter sends only changed 32 × 8 pixel regions, including regions affected by palette changes. The gameplay backdrop and floor pattern stay fixed so ordinary frames do not transfer the whole LCD; long color fades are quantized to limit full-screen transfers. Short key presses are captured during display updates, and rendering overruns cannot advance the game far beyond an unseen obstacle. The test suite covers physics, collisions, all seven completion paths, legacy and compact saves, storage bounds and corruption, LCD region conversion, UI navigation, and editor round trips. The completion replays are in `tests/replays/`.
+Geometry Dash is made by RobTop Games; NumDash is an unofficial fan project and is not affiliated with it. Physics constants and level data were researched from [gd3ds](https://github.com/AleFunky/gd3ds) by AleFunky and contributors, a Geometry Dash recreation for the 3DS. Fonts: Rammetto One (The Rammetto Project Authors) and Nunito (The Nunito Project Authors), both under the SIL Open Font License 1.1.
