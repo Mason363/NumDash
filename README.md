@@ -1,10 +1,10 @@
 # NumDash
 
-NumDash is a 320 × 240, native NumWorks `.nwa` rhythm platformer for the N0120. It includes seven playable levels, cube and ship movement, portals, pads, rings, gravity changes, practice checkpoints, progress and coins, and a three-slot level editor.
+NumDash is a 320 × 240, native NumWorks `.nwa` rhythm platformer for the N0120. It includes seven playable levels, cube and ship movement, portals, pads, rings, gravity changes, practice checkpoints, progress and coins, and a three-slot level editor. Its menus, progress cards, playfield, pause and completion overlays, icons, effects, and editor palette are redrawn for the calculator screen in Geometry Dash's visual style.
 
 The first four courses use the object positions, IDs, rotations, and color triggers from the original **Stereo Madness**, **Back on Track**, **Polargeist**, and **Dry Out** level exports. Their geometry is sourced from [gd3ds `romfs/main_levels`](https://github.com/AleFunky/gd3ds/tree/14ce4cf1f634ce70dc1340b132f9aef703167db7/romfs/main_levels); the SHA-256 hashes and object counts are in [`levels/manifest.json`](levels/manifest.json). **Neon Circuit**, **Skyline**, and **Afterglow** are original courses built for the calculator's screen and controls.
 
-This is a calculator adaptation, not a bit-for-bit port of Geometry Dash. Graphics, decoration, collision shapes, and some physics behavior are simplified. The EADK interface used by native NumWorks apps does not provide game audio, so there is no original soundtrack; a visual floor pulse follows each level's BPM.
+This is a calculator adaptation, not a bit-for-bit port of Geometry Dash. The level geometry is sourced from the exports, but decoration, collision shapes, visual effects, and some physics behavior are simplified for the 320 × 240 display and N0120 hardware. The EADK interface used by native NumWorks apps does not provide game audio, so there is no original soundtrack; a visual floor pulse follows each level's BPM.
 
 ## Install
 
@@ -22,12 +22,13 @@ Progress and editor levels are saved as `numdash.ndd` in Epsilon's record storag
 | Gameplay | Back | Pause |
 | Practice | 0, Backspace | Set or remove checkpoint |
 | Editor | Arrows, OK, EXE | Move grid cursor, place object, playtest |
+| Editor | 0 | Cycle Build, Edit, Delete modes. OK places, rotates, or deletes in the selected mode |
 | Editor | Toolbox or +, − | Next or previous object |
 | Editor | Shift, Backspace, Alpha | Rotate, erase, undo last edit |
-| Editor | X,N,T; Var; Ln | Pick object; save; theme and pulse BPM |
-| Editor | 0, Back | Help; save and exit |
+| Editor | X,N,T; Var; Ln | Pick object; save; theme, pulse BPM, and level length |
+| Editor | Shift+0, Back | Help; save and exit |
 
-The editor places up to 384 objects per level across three slots. It includes blocks, spikes, pads, rings, portals, gravity changes, and coins. Moving the cursor beyond the end grows the level automatically.
+The editor places up to 384 objects per level across three slots. It includes blocks, spikes, pads, rings, portals, gravity changes, and coins. Moving the cursor beyond the end grows the level automatically, and level length can also be adjusted in Level Settings.
 
 ## Build and test
 

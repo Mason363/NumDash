@@ -73,7 +73,7 @@ void player_step(Player *p, const Level *l, bool down) {
   float sign=p->inverted?-1.0f:1.0f;
   bool jumped=false;
   if(!p->mode && p->grounded && down) {
-    p->vy=11.18f*sign; p->grounded=false; jumped=true;
+    p->vy=11.18f*sign; p->grounded=false; jumped=true;p->jumps++;
     /* Ground jump consumes the press; rings require a second press. */
     p->orb_armed=false;
   }
@@ -113,7 +113,7 @@ void player_step(Player *p, const Level *l, bool down) {
         else p->vy=(p->inverted?-1:1)*16;
         break;
       case ORB:
-        if(down && p->orb_armed) { use(p,i); p->vy=(p->inverted?-1:1)*11.18f; p->grounded=false; p->orb_armed=false; }
+        if(down && p->orb_armed) { use(p,i); p->vy=(p->inverted?-1:1)*11.18f; p->grounded=false; p->orb_armed=false;p->jumps++; }
         break;
       case GRAVITY:
         use(p,i);

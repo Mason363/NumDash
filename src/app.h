@@ -7,10 +7,10 @@ typedef struct {
   SaveData save;
   Player player, checkpoint;
   Level level;
-  Screen screen, help_return;
+  Screen screen, help_return, settings_return;
   uint32_t time, previous_keys, repeat_time, screen_time, deaths, fps;
   uint16_t death_timer;
-  uint8_t selection, menu, slot, brush, rotate;
+  uint8_t selection, menu, slot, brush, rotate, edit_mode;
   bool running, practice, has_checkpoint, testing, dirty, save_ok, loaded;
   int cursor_x,cursor_y,edit_camera,undo_count;
   CustomLevel undo;

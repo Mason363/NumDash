@@ -11,7 +11,7 @@ static uint32_t rd32(const uint8_t *p) { return rd16(p)|(uint32_t)rd16(p+2)<<16;
 static void wr16(uint8_t *p,unsigned v) { p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8); }
 static void wr32(uint8_t *p,uint32_t v) { wr16(p,v); wr16(p+2,v>>16); }
 void save_defaults(SaveData *s) {
-  memset(s,0,sizeof(*s)); s->effects=1;
+  memset(s,0,sizeof(*s)); s->effects=1;s->percent=1;
   for(int i=0;i<ND_SLOTS;i++) { s->custom[i].length=1800; s->custom[i].bpm=128; s->custom[i].theme=(uint8_t)i; }
 }
 size_t save_encode(const SaveData *s,uint8_t *out,size_t cap) {
@@ -21,7 +21,7 @@ size_t save_encode(const SaveData *s,uint8_t *out,size_t cap) {
   memcpy(out,"NDASH002",8); wr32(out+8,(uint32_t)need);
   size_t n=16;
   for(int i=0;i<10;i++) { out[n++]=s->best[i]; out[n++]=s->practice[i]; out[n++]=s->coins[i]; wr32(out+n,s->attempts[i]); n+=4; }
-  out[n++]=s->effects; out[n++]=s->color; out[n++]=s->fps; out[n++]=0;
+  out[n++]=s->effects; out[n++]=s->percent; out[n++]=s->fps; out[n++]=0;
   for(int i=0;i<ND_SLOTS;i++) {
     const CustomLevel *c=&s->custom[i]; wr16(out+n,c->count); wr16(out+n+2,c->length); out[n+4]=c->theme; out[n+5]=c->bpm; n+=6;
     for(unsigned j=0;j<c->count;j++) {
@@ -52,7 +52,7 @@ bool save_decode(SaveData *s,const uint8_t *in,size_t size) {
   if(n!=size) return false;
   save_defaults(s); n=16;
   for(int i=0;i<10;i++) { s->best[i]=in[n++]; s->practice[i]=in[n++]; s->coins[i]=in[n++]; s->attempts[i]=rd32(in+n); n+=4; }
-  s->effects=in[n++]; s->color=in[n++]; s->fps=in[n++]; n++;
+  s->effects=in[n++]; s->percent=in[n++];if(s->percent>1)s->percent=1; s->fps=in[n++]; n++;
   for(int i=0;i<ND_SLOTS;i++) {
     CustomLevel *c=&s->custom[i]; c->count=(uint16_t)rd16(in+n); c->length=(uint16_t)rd16(in+n+2); c->theme=in[n+4]; c->bpm=in[n+5]; n+=6;
     for(unsigned j=0;j<c->count;j++,n+=12) c->objects[j]=(Object){(int16_t)rd16(in+n),(int16_t)rd16(in+n+2),(uint16_t)rd16(in+n+4),in[n+6],in[n+7],(uint16_t)rd16(in+n+8),(uint16_t)rd16(in+n+10)};

@@ -53,6 +53,11 @@ static void leave_play(void) {
 }
 static void undo_snapshot(void) {app.undo=app.save.custom[app.slot];app.undo_count=1;}
 static void edit_reset_progress(void) {unsigned i=ND_BUILTINS+app.slot;app.save.best[i]=app.save.practice[i]=app.save.coins[i]=0;app.dirty=true;}
+static Object *editor_at_cursor(CustomLevel *c) {
+  for(unsigned i=0;i<c->count;i++)if(c->objects[i].x==app.cursor_x &&
+      (c->objects[i].y==app.cursor_y||c->objects[i].y==app.cursor_y-13))return &c->objects[i];
+  return NULL;
+}
 void app_tick(uint32_t keys) {
   app.time++;
   uint32_t hit=keys&~app.previous_keys;
@@ -66,7 +71,7 @@ void app_tick(uint32_t keys) {
       if(hit&K_LEFT)app.menu=(app.menu+3)%4;
       if(hit&K_RIGHT)app.menu=(app.menu+1)%4;
       if(hit&K_BACK){app_save();app.running=false;}
-      if(accept){if(app.menu==0){app.selection=0;screen(SELECT);}else if(app.menu==1)screen(SLOTS);else if(app.menu==2)screen(SETTINGS);else {app.help_return=HOME;screen(HELP);}}
+      if(accept){if(app.menu==0){app.selection=0;screen(SELECT);}else if(app.menu==1)screen(SLOTS);else if(app.menu==2){app.settings_return=HOME;screen(SETTINGS);}else {app.help_return=HOME;screen(HELP);}}
       break;
     case SELECT:
       if(hit&K_LEFT)app.selection=(app.selection+ND_BUILTINS-1)%ND_BUILTINS;
@@ -80,7 +85,7 @@ void app_tick(uint32_t keys) {
       if(hit&K_DOWN)app.slot=(app.slot+1)%ND_SLOTS;
       if(hit&K_BACK)screen(HOME);
       else if(hit&K_EXE)app_start(ND_BUILTINS+app.slot,false,false);
-      else if(hit&K_OK){app.cursor_x=15;app.cursor_y=15;app.edit_camera=0;app.undo_count=0;screen(EDITOR);}
+      else if(hit&K_OK){app.cursor_x=15;app.cursor_y=15;app.edit_camera=0;app.undo_count=0;app.edit_mode=0;screen(EDITOR);}
       break;
     case EDITOR: {
       CustomLevel *c=&app.save.custom[app.slot];
@@ -95,29 +100,35 @@ void app_tick(uint32_t keys) {
       if(hit&(K_TOOL|K_PLUS))app.brush=(app.brush+1)%BRUSHES;
       if(hit&K_MINUS)app.brush=(app.brush+BRUSHES-1)%BRUSHES;
       if(hit&K_SHIFT)app.rotate=(app.rotate+1)%4;
-      if(hit&K_OK){undo_snapshot();Object o={(int16_t)app.cursor_x,(int16_t)app.cursor_y,brushes[app.brush],app.rotate,0,0,0};if(o.id==35||o.id==67)o.y-=13;if(o.id==9)o.y-=13;if(editor_put(c,o)){edit_reset_progress();}else notify("LEVEL FULL - DELETE AN OBJECT");}
+      if(hit&K_OK){
+        if(app.edit_mode==0){undo_snapshot();Object o={(int16_t)app.cursor_x,(int16_t)app.cursor_y,brushes[app.brush],app.rotate,0,0,0};if(o.id==35||o.id==67||o.id==9)o.y-=13;if(editor_put(c,o)){edit_reset_progress();}else notify("LEVEL FULL - DELETE AN OBJECT");}
+        else if(app.edit_mode==1){Object *o=editor_at_cursor(c);if(o){undo_snapshot();o->rot=(o->rot+1)%4;edit_reset_progress();}}
+        else {Object *o=editor_at_cursor(c);if(o){int y=o->y;undo_snapshot();editor_remove(c,app.cursor_x,y);edit_reset_progress();}}
+      }
       if(hit&K_ERASE){undo_snapshot();bool removed=editor_remove(c,app.cursor_x,app.cursor_y);removed|=editor_remove(c,app.cursor_x,app.cursor_y-13);if(removed)edit_reset_progress();}
       if(hit&K_UNDO){if(app.undo_count){*c=app.undo;app.undo_count=0;edit_reset_progress();notify("UNDONE");}else notify("NOTHING TO UNDO");}
-      if(hit&K_COPY){for(unsigned i=0;i<c->count;i++)if(c->objects[i].x==app.cursor_x && (c->objects[i].y==app.cursor_y||c->objects[i].y==app.cursor_y-13)){for(unsigned j=0;j<BRUSHES;j++)if(brushes[j]==c->objects[i].id)app.brush=(uint8_t)j;app.rotate=c->objects[i].rot;}}
+      if(hit&K_COPY){Object *o=editor_at_cursor(c);if(o){for(unsigned j=0;j<BRUSHES;j++)if(brushes[j]==o->id)app.brush=(uint8_t)j;app.rotate=o->rot;}}
       if(hit&K_SAVE){app_save();notify(app.save_ok?"LEVEL SAVED":"SAVE FAILED - STORAGE UNAVAILABLE");}
       if(hit&K_PROPS)screen(PROPERTIES);
-      if(hit&K_CHECK){app.help_return=EDITOR;screen(HELP);}
+      if(hit&K_CHECK){if(keys&K_SHIFT){app.help_return=EDITOR;screen(HELP);}else app.edit_mode=(app.edit_mode+1)%3;}
       break;
     }
     case PROPERTIES: {
       CustomLevel *c=&app.save.custom[app.slot];
-      if(hit&(K_UP|K_DOWN))app.menu^=1;
+      if(hit&K_UP)app.menu=(app.menu+2)%3;
+      if(hit&K_DOWN)app.menu=(app.menu+1)%3;
       if(hit&(K_LEFT|K_RIGHT)){
         int delta=(hit&K_RIGHT)?1:-1;
         if(app.menu==0)c->theme=(uint8_t)((c->theme+delta+6)%6);
-        else {int bpm=c->bpm+delta*5;if(bpm>=60&&bpm<=200)c->bpm=(uint8_t)bpm;}
+        else if(app.menu==1){int bpm=c->bpm+delta*5;if(bpm>=60&&bpm<=200)c->bpm=(uint8_t)bpm;}
+        else {int length=c->length+delta*150;int min=300;if(c->count&&min<c->objects[c->count-1].x+300)min=c->objects[c->count-1].x+300;if(length>=min&&length<=32000)c->length=(uint16_t)length;}
         app.dirty=true;
       }
       if(hit&K_BACK||accept)screen(EDITOR);
       break;
     }
     case PLAY:
-      if(hit&K_BACK){remember_progress();screen(PAUSE);break;}
+      if(hit&K_BACK){remember_progress();screen(PAUSE);app.menu=2;break;}
       if(app.player.dead){app.death_timer++;if(app.death_timer>=180 || (app.death_timer>48&&accept))restart();break;}
       if(app.practice&&hit&K_CHECK){app.checkpoint=app.player;app.has_checkpoint=true;notify("CHECKPOINT SET");}
       if(app.practice&&hit&K_ERASE){app.has_checkpoint=false;notify("CHECKPOINT REMOVED");}
@@ -126,123 +137,237 @@ void app_tick(uint32_t keys) {
       if(app.player.complete){remember_progress();if(!app.testing)app_save();screen(COMPLETE);}
       break;
     case PAUSE:
-      if(hit&K_UP)app.menu=(app.menu+3)%4;
-      if(hit&K_DOWN)app.menu=(app.menu+1)%4;
+      if(hit&(K_UP|K_LEFT))app.menu=(app.menu+4)%5;
+      if(hit&(K_DOWN|K_RIGHT))app.menu=(app.menu+1)%5;
       if(hit&K_BACK){screen(PLAY);break;}
-      if(accept){if(app.menu==0)screen(PLAY);else if(app.menu==1){app.has_checkpoint=false;restart();screen(PLAY);}else if(app.menu==2){app.practice=!app.practice;app.has_checkpoint=false;restart();screen(PLAY);}else leave_play();}
+      if(accept){if(app.menu==0){app.settings_return=PAUSE;screen(SETTINGS);}else if(app.menu==1){app.practice=!app.practice;app.has_checkpoint=false;restart();screen(PLAY);}else if(app.menu==2)screen(PLAY);else if(app.menu==3)leave_play();else {app.has_checkpoint=false;restart();screen(PLAY);}}
       break;
     case COMPLETE:
       if(app.time-app.screen_time<120)break;
+      if(hit&(K_LEFT|K_RIGHT))app.menu^=1;
       if(hit&K_BACK)leave_play();
-      else if(accept){if(!app.testing&&app.selection<ND_BUILTINS-1)app_start(app.selection+1,false,false);else leave_play();}
+      else if(accept){if(app.menu==0)app_start(app.selection,false,app.testing);else leave_play();}
       break;
     case SETTINGS:
       if(hit&K_UP)app.menu=(app.menu+2)%3;
       if(hit&K_DOWN)app.menu=(app.menu+1)%3;
-      if(accept||hit&(K_LEFT|K_RIGHT)){if(app.menu==0)app.save.effects^=1;else if(app.menu==1)app.save.color=(app.save.color+1)%6;else app.save.fps^=1;app.dirty=true;}
-      if(hit&K_BACK){app_save();screen(HOME);}
+      if(accept||hit&(K_LEFT|K_RIGHT)){if(app.menu==0)app.save.effects^=1;else if(app.menu==1)app.save.percent^=1;else app.save.fps^=1;app.dirty=true;}
+      if(hit&K_BACK){app_save();screen(app.settings_return);if(app.screen==PAUSE)app.menu=2;}
       break;
     case HELP:if(accept||hit&K_BACK)screen(app.help_return);break;
   }
 }
 
-static void label(int x,int y,const char *s,int scale,int c){text(x+1,y+2,s,scale,C_BLACK);text(x,y,s,scale,c);}
 static void title(const char *s){centered(20,s,2,C_BLACK);centered(18,s,2,C_WHITE);}
 static void panel(int x,int y,int w,int h){rect(x+3,y+4,w,h,C_BLACK);rect(x,y,w,h,C_INK);outline(x,y,w,h,C_GLOW);outline(x+2,y+2,w-4,h-4,C_BG3);}
 static void footer(const char *s){rect(0,222,320,18,C_INK);centered(228,s,1,C_MUTED);}
-static void button(int x,int y,int w,const char *s,bool active){rect(x+2,y+3,w,24,C_BLACK);rect(x,y,w,24,active?C_LIME:C_BG3);outline(x,y,w,24,active?C_WHITE:C_GLOW);text(x+(w-(int)strlen(s)*6)/2,y+9,s,1,active?C_BLACK:C_WHITE);}
-static void bar(int x,int y,int width,int percent,int color){rect(x,y,width,12,C_BLACK);outline(x,y,width,12,C_WHITE);if(percent>0)rect(x+2,y+2,(width-4)*percent/100,8,color);}
+static void button(int x,int y,int w,const char *s,bool active){rect(x+2,y+3,w,24,C_BLACK);rect(x,y,w,24,C_LIME);outline(x,y,w,24,active?C_YELLOW:C_WHITE);text(x+(w-(int)strlen(s)*6)/2,y+9,s,1,C_BLACK);}
+static void chunky(int x,int y,const char *s,int scale,int c){
+  text(x+2,y+3,s,scale,C_BLACK);
+  text(x-1,y,s,scale,C_BLACK);text(x+1,y,s,scale,C_BLACK);
+  text(x,y-1,s,scale,C_BLACK);text(x,y+1,s,scale,C_BLACK);
+  text(x,y,s,scale,c);
+}
+static void chunky_centered(int y,const char *s,int scale,int c){chunky((320-(int)strlen(s)*6*scale+scale)/2,y,s,scale,c);}
+static void gd_bar(int x,int y,int w,int h,int percent,int color){
+  rect(x+2,y+2,w,h,C_BLACK);rect(x,y,w,h,C_INK);outline(x,y,w,h,C_WHITE);
+  if(percent>0){int fill=(w-4)*percent/100;if(fill<1)fill=1;rect(x+2,y+2,fill,h-4,color);}
+}
+static void gd_round(int x,int y,int r,bool selected){
+  circle(x+2,y+3,r+2,C_BLACK,true);circle(x,y,r+2,C_WHITE,true);
+  circle(x,y,r,C_BLACK,true);circle(x,y,r-2,C_LIME,true);
+  circle(x-r/3,y-r/3,r/3,C_GLOW,true);
+  if(selected)circle(x,y,r+3,C_YELLOW,false);
+}
+static void gd_cross(int x,int y,int r,bool selected){
+  int b=r/2;
+  rect(x-b+2,y-r+3,b*2,r*2,C_BLACK);rect(x-r+2,y-b+3,r*2,b*2,C_BLACK);
+  rect(x-b-2,y-r-2,b*2+4,r*2+4,C_WHITE);rect(x-r-2,y-b-2,r*2+4,b*2+4,C_WHITE);
+  rect(x-b,y-r,b*2,r*2,C_BLACK);rect(x-r,y-b,r*2,b*2,C_BLACK);
+  rect(x-b+2,y-r+2,b*2-4,r*2-4,C_LIME);
+  rect(x-r+2,y-b+2,r*2-4,b*2-4,C_LIME);
+  if(selected)outline(x-r-3,y-r-3,r*2+6,r*2+6,C_YELLOW);
+  rect(x-b+3,y-r+3,b*2-6,3,C_GLOW);rect(x-r+3,y-b+3,r*2-6,3,C_GLOW);
+  rect(x-r+3,y-b+4,r/2,5,C_CYAN);rect(x+r-r/2-3,y-b+4,r/2,5,C_CYAN);
+}
+static void gd_arrow(int x,int y,bool right,int color){
+  int d=right?1:-1;triangle(x-8*d,y-15,x-8*d,y+15,x+12*d,y,C_BLACK);
+  triangle(x-8*d,y-13,x-8*d,y+12,x+10*d,y,C_WHITE);
+  triangle(x-6*d,y-10,x-6*d,y+9,x+7*d,y,color);
+}
+static void gd_icon(int x,int y,int kind,int r,bool selected){
+  gd_round(x,y,r,selected);
+  switch(kind){
+    case 0:
+      for(int i=0;i<9;i++){int dx=(i%3-1)*7,dy=(i/3-1)*7;if(i==4)continue;rect(x+dx-2,y+dy-2,5,5,C_BLACK);}
+      circle(x,y,9,C_BLACK,true);circle(x,y,6,C_CYAN,true);circle(x,y,3,C_BLACK,true);break;
+    case 1:
+      triangle(x,y-13,x-9,y,x+9,y,C_WHITE);triangle(x,y+13,x-9,y,x+9,y,C_WHITE);
+      triangle(x,y-10,x-6,y,x+6,y,C_CYAN);triangle(x,y+10,x-6,y,x+6,y,C_CYAN);break;
+    case 2:
+      triangle(x-8,y-12,x-8,y+12,x+12,y,C_BLACK);
+      triangle(x-6,y-10,x-6,y+10,x+10,y,C_YELLOW);break;
+    case 3:
+      for(int i=-1;i<=1;i++){circle(x-8,y+i*7,2,C_CYAN,true);rect(x-3,y+i*7-2,13,4,C_BLACK);rect(x-2,y+i*7-1,11,2,C_CYAN);}break;
+    case 4:
+      circle(x,y,10,C_CYAN,false);rect(x-13,y-6,7,9,selected?C_LIME:C_BG3);
+      triangle(x-10,y-7,x-14,y+2,x-4,y+1,C_CYAN);break;
+  }
+}
+static void dim_scene(void){
+  static const uint8_t map[16]={0,1,2,3,4,5,6,2,8,2,2,2,2,2,14,2};
+  for(unsigned i=0;i<sizeof(frame);i++){uint8_t b=frame[i];frame[i]=(uint8_t)(map[b&15]|(map[b>>4]<<4));}
+  int dark[]={C_BG,C_BG2,C_BG3,C_GROUND,C_GROUND2,C_GLOW,C_INK};
+  for(unsigned i=0;i<sizeof(dark)/sizeof(dark[0]);i++)palette[dark[i]]=color_mix(palette[dark[i]],0,2,3);
+}
 static void world(bool editing) {
   const Level *l=&app.level; Level custom;
   float camera,cy;
-  if(editing){custom=custom_level(&app.save.custom[app.slot],app.slot);l=&custom;camera=app.cursor_x-180;if(camera<0)camera=0;cy=app.cursor_y>240?app.cursor_y-240:0;}
-  else {camera=app.player.x-115;if(camera<0)camera=0;cy=app.player.camera_y;}
-  gfx_palette(editing?l->background:app.player.bg,editing?l->ground:app.player.ground,app.save.color);
+  if(editing){custom=custom_level(&app.save.custom[app.slot],app.slot);l=&custom;camera=app.cursor_x-180;if(camera<0)camera=0;cy=app.cursor_y>210?app.cursor_y-210:0;}
+  else {camera=app.player.x-115;if(camera<-70)camera=-70;cy=app.player.camera_y;}
+  gfx_palette(editing?l->background:app.player.bg,editing?l->ground:app.player.ground,0);
   backdrop((int)(camera*.6f),app.time,false);
-  int floor_y=208+(int)(cy*.6f);
-  if(editing){for(int x=-(int)(camera*.6f)%18;x<320;x+=18)line(x,28,x,211,C_GRID);for(int y=floor_y%18;y<212;y+=18)line(0,y,319,y,C_GRID);}
+  int base_floor=editing?158:184;
+  int floor_y=base_floor+(int)(cy*.6f);
+  if(editing){for(int x=-((int)(camera*.6f)%18+18)%18;x<320;x+=18)line(x,0,x,177,C_INK);for(int y=((floor_y%18)+18)%18;y<178;y+=18)line(0,y,319,y,C_INK);}
   unsigned begin=level_lower_bound(l,camera-90);
   for(unsigned i=begin;i<l->count&&l->objects[i].x<camera+650;i++) {
     const Object *o=&l->objects[i];int x=(int)((o->x-camera)*.6f),y=floor_y-(int)(o->y*.6f);
     if(y>=-40&&y<260)object_draw(o,x,y,!editing&&player_used(&app.player,i));
   }
   if(!editing&&app.player.mode){int y=floor_y-(int)(app.player.ceiling*.6f);rect(0,0,320,y,C_GROUND2);rect(0,y,320,2,C_WHITE);floor_y-= (int)(app.player.floor*.6f);}
-  rect(0,floor_y,320,240-floor_y,C_GROUND);rect(0,floor_y,320,2,C_WHITE);rect(0,floor_y+3,320,2,C_GLOW);
+  rect(0,floor_y,320,240-floor_y,C_GROUND);rect(0,floor_y+24,320,240-floor_y-24,C_GROUND2);
+  rect(0,floor_y,320,2,C_WHITE);rect(0,floor_y+3,320,2,C_GLOW);
   unsigned beat_ticks=14400u/(l->bpm?l->bpm:120);
   unsigned beat_phase=(editing?app.time:app.player.tick)%beat_ticks;
   if(app.save.effects&&beat_phase<12)rect(0,floor_y-2,320,2,C_GLOW);
-  for(int x=-((int)(camera*.6f)%24);x<320;x+=24){outline(x,floor_y+9,19,19,C_GROUND2);line(x,floor_y+9,x+19,floor_y+28,C_GROUND2);}
+  for(int x=-((int)(camera*.6f)%38);x<320;x+=38)outline(x,floor_y+8,37,40,C_GROUND2);
   int finish=(int)((l->length-camera)*.6f);if(finish<320){rect(finish,28,3,180,C_WHITE);for(int y=30;y<208;y+=12)rect(finish+3,y,6,6,C_LIME);}
   if(editing){
-    int x=(int)((app.cursor_x-camera)*.6f),y=208+(int)(cy*.6f)-(int)(app.cursor_y*.6f);
+    int x=(int)((app.cursor_x-camera)*.6f),y=base_floor+(int)(cy*.6f)-(int)(app.cursor_y*.6f);
     outline(x-11,y-11,23,23,C_YELLOW);line(x-15,y,x-11,y,C_YELLOW);line(x+11,y,x+15,y,C_YELLOW);
-    Object ghost={(int16_t)app.cursor_x,(int16_t)app.cursor_y,brushes[app.brush],app.rotate,0,0,0};object_draw(&ghost,x,y,false);
-    rect(0,0,320,26,C_INK);text(7,5,brush_names[app.brush],1,C_YELLOW);text(7,16,"X",1,C_MUTED);number(20,16,app.cursor_x/30,1,C_WHITE);text(66,16,"Y",1,C_MUTED);number(80,16,app.cursor_y/30,1,C_WHITE);text(125,16,"ROT",1,C_MUTED);number(150,16,app.rotate*90,1,C_WHITE);number(232,16,l->count,1,C_WHITE);text(256,16,"/384",1,C_MUTED);
-    footer("OK PLACE  EXE TEST  0 HELP");return;
+    if(app.edit_mode==0){Object ghost={(int16_t)app.cursor_x,(int16_t)app.cursor_y,brushes[app.brush],app.rotate,0,0,0};object_draw(&ghost,x,y,false);}
+    rect(0,0,320,20,C_INK);const char *mode_names[]={"BUILD","EDIT","DELETE"};text(6,4,mode_names[app.edit_mode],1,C_LIME);text(60,4,brush_names[app.brush],1,C_WHITE);
+    text(7,13,"X",1,C_MUTED);number(19,13,app.cursor_x/30,1,C_WHITE);text(65,13,"Y",1,C_MUTED);number(77,13,app.cursor_y/30,1,C_WHITE);text(124,13,"ROT",1,C_MUTED);number(148,13,app.rotate*90,1,C_WHITE);number(244,13,l->count,1,C_WHITE);text(268,13,"/384",1,C_MUTED);
+    rect(0,176,320,64,C_INK);rect(0,176,320,2,C_WHITE);
+    const char *tabs[]={"B","E","D"};for(int i=0;i<3;i++){rect(4,182+i*17,26,15,i==app.edit_mode?C_LIME:C_BG3);outline(4,182+i*17,26,15,C_WHITE);text(14,186+i*17,tabs[i],1,C_BLACK);}
+    for(int i=0;i<6;i++){
+      unsigned j=(app.brush/6)*6+i;int bx=35+i*47;
+      rect(bx+2,183,42,34,C_BLACK);rect(bx,181,42,34,j==app.brush?C_BG3:C_GROUND2);outline(bx,181,42,34,j==app.brush?C_YELLOW:C_MUTED);
+      Object icon={0,0,brushes[j],0,0,0,0};object_draw(&icon,bx+21,198,false);
+      number(bx+17,217,j+1,1,j==app.brush?C_YELLOW:C_MUTED);
+    }
+    const char *tips[]={"OK PLACE  TOOL OBJECT  0 MODE","OK ROTATE  XNT PICK  0 MODE","OK DELETE  ALPHA UNDO  0 MODE"};text(40,231,tips[app.edit_mode],1,C_WHITE);return;
   }
-  int px=(int)((app.player.x-camera)*.6f),py=208+(int)(cy*.6f)-(int)(app.player.y*.6f);
+  int px=(int)((app.player.x-camera)*.6f),py=base_floor+(int)(cy*.6f)-(int)(app.player.y*.6f);
   if(app.player.dead){
     if(app.save.effects)for(int i=0;i<24;i++){int dx=(i*17%19)-9,dy=(i*11%23)-11;int t=app.death_timer/4;rect(px+dx*t/5,py+dy*t/5+t*t/180,3,3,i%2?C_PLAYER:C_WHITE);}
-    if(app.death_timer<110){text(111,90,"CRASH!",3,C_BLACK);text(109,88,"CRASH!",3,C_WHITE);}
+    /* The burst is the feedback; the original game immediately retries. */
   }else{
     if(app.save.effects){for(int i=1;i<=4;i++){int off=i*6;rect(px-off-8,py+6,3,3,i%2?C_GLOW:C_PLAYER);}if(app.player.mode){triangle(px-13,py,px-25-(int)(app.time%7),py+4,px-13,py+6,C_ORANGE);}}
     player_icon(px,py,app.player.rotation,app.player.mode,C_PLAYER);
   }
-  rect(0,0,320,20,C_INK);bar(60,5,195,player_progress(&app.player,l),app.practice?C_CYAN:C_LIME);number(264,7,player_progress(&app.player,l),1,C_WHITE);text(283,7,"%",1,C_WHITE);
-  text(7,7,app.practice?"PRAC":"RUN",1,app.practice?C_CYAN:C_WHITE);
-  if(app.player.tick<450){text(87,52,"ATTEMPT",2,C_WHITE);number(184,52,app.deaths,2,C_WHITE);}
-  if(app.practice){text(8,229,"0 CHECKPOINT  DEL REMOVE",1,C_CYAN);}
-  for(unsigned i=0;i<3;i++){circle(282+(int)i*13,231,4,i<app.player.coins?C_YELLOW:C_GLOW,i<app.player.coins);}
+  gd_bar(79,5,159,8,player_progress(&app.player,l),app.practice?C_CYAN:C_LIME);
+  if(app.save.percent){number(244,5,player_progress(&app.player,l),1,C_WHITE);text(262,5,"%",1,C_WHITE);}
+  circle(304,13,10,C_WHITE,false);rect(301,8,2,10,C_WHITE);rect(306,8,2,10,C_WHITE);
+  if(app.player.tick<430){chunky(10,57,"ATTEMPT",2,C_WHITE);number(113,57,app.deaths,2,C_WHITE);}
+  if(app.practice)text(4,228,"0 CHECKPOINT    DEL REMOVE",1,C_CYAN);
 }
 void app_render(void) {
-  gfx_palette(0x2199,0x0153,app.save.color);backdrop((int)app.time/6,app.time,false);
+  gfx_palette(0x2c78,0x1454,0);backdrop((int)app.time/6,app.time,false);
   switch(app.screen) {
     case HOME: {
-      text(57,35,"NUMDASH",5,C_BLACK);text(55,31,"NUMDASH",5,C_LIME);centered(76,"GEOMETRY IN MOTION",1,C_WHITE);
-      line(70,92,250,92,C_GLOW);
-      circle(160,136,31,C_BLACK,true);circle(158,133,31,C_LIME,true);circle(158,133,28,C_WHITE,false);triangle(150,116,150,150,173,133,C_BLACK);triangle(153,121,153,145,169,133,C_WHITE);
-      player_icon(55,152,app.time/4,false,C_PLAYER);player_icon(264,122,app.time/5,true,C_CYAN);
-      const char *items[]={"PLAY","CREATE","OPTIONS","HELP"};for(int i=0;i<4;i++)button(7+i*79,183,70,items[i],app.menu==i);
-      footer("LEFT / RIGHT SELECT   OK OPEN");break;
+      rect(0,198,320,42,C_GROUND);rect(0,198,320,2,C_WHITE);
+      for(int x=-(int)(app.time/7)%56;x<320;x+=56)outline(x,205,55,35,C_GROUND2);
+      chunky_centered(26,"GEOMETRY DASH",3,C_LIME);
+      gd_cross(160,123,31,app.menu==0);triangle(149,105,149,141,180,123,C_BLACK);triangle(151,108,151,138,177,123,C_YELLOW);
+      gd_cross(66,124,23,false);rect(52,111,27,27,C_BLACK);rect(55,114,21,21,C_YELLOW);rect(59,120,4,4,C_BLACK);rect(68,120,4,4,C_BLACK);rect(61,129,11,3,C_BLACK);
+      gd_cross(254,124,23,app.menu==1);for(int k=-1;k<=1;k++){line(241+k,135,267+k,113,C_BLACK);line(241+k,113,267+k,135,C_BLACK);}line(241,135,267,113,C_YELLOW);line(241,113,267,135,C_YELLOW);
+      gd_icon(118,179,0,17,app.menu==2);gd_icon(203,179,3,17,app.menu==3);
+      player_icon(31,188,app.time/3,false,C_PLAYER);
+      text(8,225,"< > SELECT      OK OPEN",1,C_WHITE);break;
     }
     case SELECT: {
-      const Level *l=&nd_levels[app.selection];gfx_palette(l->background,l->ground,app.save.color);backdrop((int)app.time/8,app.time,false);
-      title("SELECT LEVEL");panel(32,52,256,144);
-      circle(70,83,17,app.selection<2?C_CYAN:app.selection<4?C_YELLOW:C_LIME,true);circle(70,83,17,C_WHITE,false);rect(61,79,4,4,C_BLACK);rect(75,79,4,4,C_BLACK);line(62,89,77,89,C_BLACK);
-      text(99,67,app.selection<4?"CLASSIC":"NUMDASH ORIGINAL",1,C_MUTED);label(99,83,l->name,2,C_WHITE);number(257,61,app.selection+1,1,C_YELLOW);
-      text(48,113,"NORMAL",1,C_WHITE);number(235,113,app.save.best[app.selection],1,C_LIME);text(260,113,"%",1,C_WHITE);bar(48,125,224,app.save.best[app.selection],C_LIME);
-      text(48,148,"PRACTICE",1,C_WHITE);number(235,148,app.save.practice[app.selection],1,C_CYAN);text(260,148,"%",1,C_WHITE);bar(48,160,224,app.save.practice[app.selection],C_CYAN);
-      for(int i=0;i<3;i++)circle(147+i*13,184,4,app.save.coins[app.selection]>i?C_YELLOW:C_GLOW,app.save.coins[app.selection]>i);
-      text(10,120,"<",2,C_WHITE);text(300,120,">",2,C_WHITE);
-      for(int i=0;i<7;i++)circle(124+i*12,208,3,i==app.selection?C_WHITE:C_GLOW,i==app.selection);
-      footer("OK PLAY  TOOLBOX PRACTICE  BACK MENU");break;
+      const Level *l=&nd_levels[app.selection];gfx_palette(0x095f,0x0153,0);backdrop((int)app.time/9,app.time,false);
+      rect(0,208,320,32,C_BG2);rect(0,207,320,2,C_WHITE);
+      circle(18,23,17,C_BLACK,true);circle(17,22,16,C_LIME,true);circle(17,22,16,C_WHITE,false);
+      gd_arrow(17,22,false,C_WHITE);gd_arrow(18,108,false,C_WHITE);gd_arrow(302,108,true,C_WHITE);
+      rect(43,54,237,78,C_INK);
+      circle(73,83,18,C_BLACK,true);circle(72,82,17,l->difficulty<3?C_CYAN:C_LIME,true);circle(72,82,17,C_WHITE,false);
+      rect(63,76,5,5,C_BLACK);rect(78,76,5,5,C_BLACK);
+      if(l->difficulty<3){rect(65,89,17,3,C_BLACK);rect(68,92,11,2,C_PINK);}
+      else {rect(65,92,17,3,C_BLACK);rect(67,89,3,3,C_BLACK);rect(78,89,3,3,C_BLACK);}
+      chunky(99,72,l->name,2,C_WHITE);
+      triangle(263,55,257,67,269,67,C_YELLOW);triangle(257,59,269,59,263,71,C_YELLOW);number(248,55,l->difficulty,1,C_WHITE);
+      for(int i=0;i<3;i++){int x=216+i*18;circle(x,110,7,i<app.save.coins[app.selection]?C_YELLOW:C_MUTED,true);circle(x,110,7,C_WHITE,false);}
+      chunky_centered(137,"NORMAL MODE",1,C_WHITE);
+      gd_bar(50,151,200,13,app.save.best[app.selection],C_LIME);
+      number(259,154,app.save.best[app.selection],1,C_WHITE);text(277,154,"%",1,C_WHITE);
+      chunky_centered(174,"PRACTICE MODE",1,C_WHITE);
+      gd_bar(50,188,200,13,app.save.practice[app.selection],C_CYAN);
+      number(259,191,app.save.practice[app.selection],1,C_WHITE);text(277,191,"%",1,C_WHITE);
+      for(int i=0;i<7;i++)circle(124+i*12,217,2,i==app.selection?C_WHITE:C_MUTED,true);
+      centered(227,"OK PLAY    TOOLBOX PRACTICE",1,C_WHITE);break;
     }
     case SLOTS:
-      title("MY LEVELS");
-      for(int i=0;i<3;i++){int y=56+i*45;panel(30,y,260,36);if(app.slot==i)outline(29,y-1,262,38,C_LIME);text(43,y+8,"MY LEVEL",1,C_WHITE);number(99,y+8,i+1,1,C_WHITE);number(43,y+22,app.save.custom[i].count,1,C_MUTED);text(69,y+22,"OBJECTS",1,C_MUTED);text(202,y+14,app.slot==i?"< EDIT >":"",1,C_LIME);}
-      centered(202,app.save_ok?"SAVED ON DEVICE":"SAVE: VAR IN EDITOR",1,C_MUTED);footer("UP / DOWN  OK EDIT  EXE PLAY");break;
+      gfx_palette(0x095f,0x8a43,0);backdrop((int)app.time/9,app.time,false);
+      chunky_centered(16,"MY LEVELS",2,C_WHITE);
+      rect(23,48,274,151,C_BLACK);rect(25,46,270,151,C_LIME);rect(30,51,260,140,C_GROUND);
+      for(int i=0;i<3;i++){int y=58+i*42;rect(39,y+2,244,36,C_BLACK);rect(37,y,244,36,app.slot==i?C_BG3:C_INK);outline(37,y,244,36,app.slot==i?C_YELLOW:C_WHITE);
+        text(48,y+7,"MY LEVEL",1,C_WHITE);number(102,y+7,i+1,1,C_WHITE);number(49,y+22,app.save.custom[i].count,1,C_MUTED);text(72,y+22,"OBJECTS",1,C_MUTED);
+        gd_icon(251,y+17,2,13,app.slot==i);}
+      centered(202,app.save_ok?"SAVED":"VAR SAVES IN EDITOR",1,C_WHITE);footer("UP DOWN SELECT  OK EDIT  EXE PLAY");break;
     case EDITOR:world(true);break;
     case PLAY:world(false);break;
-    case PAUSE:
-      world(false);panel(61,38,198,174);centered(51,"PAUSED",2,C_WHITE);
-      {const char *items[]={"RESUME","RESTART",app.practice?"NORMAL MODE":"PRACTICE MODE",app.testing?"BACK TO EDITOR":"LEVEL SELECT"};for(int i=0;i<4;i++)button(83,79+i*30,154,items[i],app.menu==i);}
-      break;
-    case COMPLETE:
-      world(false);panel(34,50,252,147);centered(67,app.practice?"PRACTICE DONE!":"LEVEL COMPLETE!",2,C_LIME);
-      text(62,103,"ATTEMPTS",1,C_WHITE);number(216,103,app.deaths,1,C_YELLOW);text(62,124,"COINS",1,C_WHITE);number(216,124,app.player.coins,1,C_YELLOW);
-      bar(63,147,194,100,app.practice?C_CYAN:C_LIME);centered(176,app.testing?"OK RETURN TO EDITOR":"OK CONTINUE   BACK LEVELS",1,C_WHITE);break;
-    case SETTINGS:
-      title("OPTIONS");panel(35,56,250,142);
-      button(54,72,212,app.save.effects?"EFFECTS ON":"EFFECTS OFF",app.menu==0);
-      button(54,109,212,"ICON COLOR",app.menu==1);player_icon(246,121,0,false,C_PLAYER);
-      button(54,146,212,app.save.fps?"FPS DISPLAY ON":"FPS DISPLAY OFF",app.menu==2);
-      footer("UP / DOWN SELECT  OK CHANGE  BACK SAVE");break;
+    case PAUSE: {
+      world(false);dim_scene();
+      chunky_centered(27,app.level.name,2,C_WHITE);
+      chunky_centered(65,"NORMAL MODE",1,C_WHITE);gd_bar(60,80,200,12,app.save.best[app.selection],C_LIME);
+      number(260,82,app.save.best[app.selection],1,C_WHITE);text(278,82,"%",1,C_WHITE);
+      chunky_centered(104,"PRACTICE MODE",1,C_WHITE);gd_bar(60,119,200,12,app.save.practice[app.selection],C_CYAN);
+      number(260,121,app.save.practice[app.selection],1,C_WHITE);text(278,121,"%",1,C_WHITE);
+      static const int positions[5]={38,99,160,221,282};for(int i=0;i<5;i++)gd_icon(positions[i],171,i,i==2?25:21,app.menu==i);
+      const char *items[]={"SETTINGS",app.practice?"NORMAL MODE":"PRACTICE MODE","RESUME",app.testing?"BACK TO EDITOR":"LEVEL SELECT","RESTART"};
+      chunky_centered(210,items[app.menu],1,C_WHITE);centered(229,"< > SELECT   OK OPEN   BACK RESUME",1,C_MUTED);break;
+    }
+    case COMPLETE: {
+      world(false);
+      unsigned age=app.time-app.screen_time;
+      if(age<120){
+        for(int i=0;i<48;i++){int x=(int)((i*47+age*(i%3+1))%320),y=(int)((i*73+age*(i%5+1))%210);rect(x,y,2+i%3,2+i%3,i%3?C_CYAN:C_WHITE);}
+        chunky_centered(99,"LEVEL COMPLETE!",2,C_LIME);
+      }else{
+        dim_scene();rect(43,36,234,166,C_BLACK);rect(47,36,226,166,C_LIME);rect(51,40,218,158,C_INK);
+        rect(44,37,16,8,C_CYAN);rect(260,37,16,8,C_CYAN);rect(44,195,16,8,C_CYAN);rect(260,195,16,8,C_CYAN);
+        chunky_centered(53,app.practice?"PRACTICE COMPLETE!":"LEVEL COMPLETE!",2,C_LIME);
+        text(78,90,"ATTEMPTS",1,C_YELLOW);number(206,90,app.deaths,1,C_WHITE);
+        text(78,109,"JUMPS",1,C_YELLOW);number(206,109,app.player.jumps,1,C_WHITE);
+        text(78,128,"TIME",1,C_YELLOW);number(198,128,app.player.tick/14400,1,C_WHITE);text(210,128,":",1,C_WHITE);
+        if((app.player.tick/240)%60<10)text(216,128,"0",1,C_WHITE);number(222,128,(app.player.tick/240)%60,1,C_WHITE);
+        for(int i=0;i<3;i++){circle(135+i*24,161,8,i<app.player.coins?C_YELLOW:C_MUTED,true);circle(135+i*24,161,8,C_WHITE,false);}
+        gd_icon(104,205,4,19,app.menu==0);gd_icon(216,205,3,19,app.menu==1);
+        text(83,229,"REPLAY",1,C_WHITE);text(195,229,"LEVELS",1,C_WHITE);
+      }break;
+    }
+    case SETTINGS: {
+      chunky_centered(19,"OPTIONS",2,C_WHITE);panel(38,55,244,145);
+      static const char *options[]={"PULSE EFFECTS","SHOW PERCENT","SHOW FPS"};
+      const int values[]={app.save.effects,app.save.percent,app.save.fps};
+      for(int i=0;i<3;i++){
+        int y=78+i*39;rect(53,y-8,214,30,app.menu==i?C_BG3:C_INK);
+        if(app.menu==i)outline(53,y-8,214,30,C_YELLOW);
+        text(63,y,options[i],1,C_WHITE);
+        rect(232,y-3,19,19,C_BLACK);outline(232,y-3,19,19,C_WHITE);
+        if(values[i]){rect(235,y,13,13,C_LIME);line(237,y+6,240,y+9,C_BLACK);line(240,y+9,246,y+2,C_BLACK);}
+      }
+      footer("UP DOWN SELECT  OK TOGGLE  BACK SAVE");break;
+    }
     case PROPERTIES:
-      title("LEVEL SETTINGS");panel(40,65,240,127);button(60,83,200,"COLOR THEME",app.menu==0);number(233,91,app.save.custom[app.slot].theme+1,1,C_BLACK);button(60,122,200,"PULSE BPM",app.menu==1);number(224,130,app.save.custom[app.slot].bpm,1,C_BLACK);
-      footer("LEFT / RIGHT CHANGE  BACK EDITOR");break;
+      title("LEVEL SETTINGS");panel(40,60,240,145);button(60,74,200,"COLOR THEME",app.menu==0);number(233,82,app.save.custom[app.slot].theme+1,1,C_BLACK);button(60,111,200,"PULSE BPM",app.menu==1);number(224,119,app.save.custom[app.slot].bpm,1,C_BLACK);button(60,148,200,"LENGTH",app.menu==2);number(220,156,app.save.custom[app.slot].length/30,1,C_BLACK);
+      footer("LEFT RIGHT CHANGE  BACK EDITOR");break;
     case HELP:
       title(app.help_return==EDITOR?"EDITOR CONTROLS":"HOW TO PLAY");panel(14,49,292,163);
-      if(app.help_return==EDITOR){const char *rows[]={"ARROWS     MOVE GRID CURSOR","OK         PLACE OBJECT","TOOLBOX +/- CHANGE OBJECT","SHIFT      ROTATE 90 DEGREES","BACKSPACE  ERASE OBJECT","ALPHA      UNDO LAST EDIT","XNT        PICK OBJECT","VAR        SAVE LEVEL","LN         THEME / PULSE BPM","EXE        PLAYTEST   0 HELP","BACK       SAVE AND LEAVE"};for(int i=0;i<11;i++)text(24,58+i*13,rows[i],1,C_WHITE);}
+      if(app.help_return==EDITOR){const char *rows[]={"ARROWS     MOVE GRID CURSOR","0          BUILD EDIT DELETE","OK         USE CURRENT TOOL","TOOLBOX +/- CHANGE OBJECT","SHIFT      ROTATE 90 DEGREES","BACKSPACE  ERASE OBJECT","ALPHA      UNDO LAST EDIT","XNT        PICK OBJECT","VAR        SAVE LEVEL","LN         THEME BPM LENGTH","EXE        PLAYTEST  BACK EXIT"};for(int i=0;i<11;i++)text(24,58+i*13,rows[i],1,C_WHITE);}
       else {const char *rows[]={"OK / EXE / UP: JUMP OR FLY","HOLD TO REPEAT CUBE JUMPS","HOLD TO RISE IN SHIP MODE","TAP AGAIN ON A YELLOW ORB","YELLOW PADS JUMP AUTOMATICALLY","PORTALS CHANGE MODE / GRAVITY","BACK PAUSES THE GAME","PRACTICE: 0 SETS A CHECKPOINT","BACKSPACE REMOVES CHECKPOINT","PROGRESS SAVES ON EXIT","HOME SAVES AND EXITS THE APP"};for(int i=0;i<11;i++)text(24,58+i*13,rows[i],1,C_WHITE);}
       footer("OK / BACK RETURN");break;
   }

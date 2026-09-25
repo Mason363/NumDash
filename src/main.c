@@ -16,7 +16,7 @@ int main(int argc,char **argv) {
     uint32_t now=platform_millis(),elapsed=now-previous;previous=now;
     /* An OS stall must not simulate unseen hazards. Ordinary rendering
      * overruns catch up without changing the movement speed. */
-    if(elapsed>100) {elapsed=0;if(app.screen==PLAY&&!app.player.dead){app.screen=PAUSE;app.menu=0;}}
+    if(elapsed>100) {elapsed=0;if(app.screen==PLAY&&!app.player.dead){app.screen=PAUSE;app.menu=2;}}
     accumulator+=elapsed*ND_HZ;render_acc+=elapsed*60;
     uint32_t keys=platform_keys();
     pending_keys|=keys&~last_keys;

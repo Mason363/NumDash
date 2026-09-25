@@ -35,6 +35,7 @@ unsigned level_lower_bound(const Level *l, float x);
 typedef struct {
   float x, y, vy, camera_y, floor, ceiling;
   uint32_t tick;
+  uint16_t jumps;
   uint16_t first, death_object, bg, ground, bg_from, ground_from;
   uint16_t bg_target, ground_target, bg_time, ground_time, bg_elapsed, ground_elapsed;
   uint8_t used[ND_USED_BYTES];
@@ -54,7 +55,7 @@ typedef struct {
 } CustomLevel;
 typedef struct {
   uint8_t best[ND_BUILTINS + ND_SLOTS], practice[ND_BUILTINS + ND_SLOTS];
-  uint8_t coins[ND_BUILTINS + ND_SLOTS], effects, color, fps;
+  uint8_t coins[ND_BUILTINS + ND_SLOTS], effects, percent, fps;
   uint32_t attempts[ND_BUILTINS + ND_SLOTS];
   CustomLevel custom[ND_SLOTS];
 } SaveData;

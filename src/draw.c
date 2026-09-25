@@ -5,9 +5,9 @@ uint8_t frame[320*240/2];
 uint16_t palette[16];
 static const uint16_t player_colors[]={0xafe0,0x07ff,0xf81f,0xffe0,0xffff,0xfb00};
 void gfx_palette(uint16_t bg,uint16_t ground,unsigned player) {
-  palette[C_BG]=bg; palette[C_BG2]=color_mix(bg,0,1,5); palette[C_BG3]=color_mix(bg,0,2,5);
+  palette[C_BG]=bg; palette[C_BG2]=color_mix(bg,0,1,7); palette[C_BG3]=color_mix(bg,0xffff,1,11);
   palette[C_GROUND]=ground; palette[C_GROUND2]=color_mix(ground,0,2,5);
-  palette[C_GLOW]=color_mix(bg,0xffff,1,3);
+  palette[C_GLOW]=color_mix(bg,0xffff,1,2);
   palette[C_BLACK]=0; palette[C_WHITE]=0xffff; palette[C_MUTED]=0xbdf7;
   palette[C_LIME]=0xafe0; palette[C_CYAN]=0x07ff; palette[C_YELLOW]=0xff60; palette[C_PINK]=0xf8b6;
   palette[C_RED]=0xf986; palette[C_INK]=0x0844;
@@ -88,6 +88,7 @@ void player_icon(int x,int y,unsigned rotation,bool ship,int color) {
     if(u>=-9&&u<=9&&v>=-9&&v<=9) {
       int col=(u==-9||u==9||v==-9||v==9)?C_BLACK:color;
       if(v>=-4&&v<=0&&((u>=-5&&u<=-2)||(u>=2&&u<=5)))col=C_BLACK;
+      if(v>=-3&&v<=-2&&((u>=-4&&u<=-3)||(u>=3&&u<=4)))col=C_CYAN;
       if(v>=3&&v<=5&&u>=-5&&u<=5)col=C_BLACK;
       if(v==4&&u>=-3&&u<=3)col=C_DETAIL;
       rect(x+xx,y+yy,1,1,col);
@@ -104,8 +105,10 @@ void object_draw(const Object *o,int x,int y,bool used) {
   Shape sh=object_shape(o);
   if(sh.kind==COLOR) return;
   if(sh.kind==SOLID) {
-    int w=(int)(sh.w*.6f),h=(int)(sh.h*.6f);rect(x-w/2,y-h/2,w,h,C_BLACK);outline(x-w/2,y-h/2,w,h,C_WHITE);
-    if(w>6&&h>6){outline(x-w/2+3,y-h/2+3,w-6,h-6,C_GLOW);rect(x-w/2+4,y-h/2+4,w-8,h-8,C_BG3);}return;
+    int w=(int)(sh.w*.6f),h=(int)(sh.h*.6f);int left=x-w/2,top=y-h/2;
+    rect(left-1,top-1,w+2,h+2,C_GLOW);rect(left,top,w,h,C_BLACK);
+    if(w>6&&h>6){rect(left+2,top+h/2,w-4,h/2-2,C_INK);if(o->id==2||o->id==6||o->id==7){for(int yy=top+5;yy<top+h-1;yy+=6)line(left+2,yy,left+w-3,yy,C_BG3);for(int xx=left+5;xx<left+w-1;xx+=6)line(xx,top+2,xx,top+h-3,C_BG3);}}
+    outline(left,top,w,h,C_WHITE);return;
   }
   if(sh.kind==HAZARD) {
     if(o->id==9){rect(x-9,y-2,18,3,C_BLACK);line(x-9,y-3,x+8,y-3,C_WHITE);}
@@ -127,8 +130,13 @@ void object_draw(const Object *o,int x,int y,bool used) {
 }
 void backdrop(int scroll,unsigned t,bool grid) {
   rect(0,0,320,240,C_BG);
-  int offset=((scroll/6)%64+64)%64;
-  for(int y=0;y<240;y+=64)for(int x=-offset-64;x<320;x+=64){rect(x+4,y+4,56,56,C_BG2);outline(x+6,y+6,52,52,C_BG3);}
+  static const uint8_t widths[6]={74,49,86,57,69,91};
+  int offset=((scroll/5)%426+426)%426;
+  for(int row=0;row<4;row++){
+    int x=-(int)offset-(row&1?43:0);
+    unsigned k=0;
+    while(x<320){int w=widths[(k+row*2)%6];rect(x+3,row*64+3,w-6,58,C_BG2);outline(x+4,row*64+4,w-8,56,C_BG3);x+=w;k++;}
+  }
   if(grid)for(int y=0;y<240;y+=16)line(0,y,319,y,C_BG2);
   (void)t;
 }

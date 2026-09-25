@@ -49,9 +49,11 @@ static void test_editor(void){
 static void test_ui(void){
   app_init();shot("build/menu.ppm");tap(K_OK);assert(app.screen==SELECT);shot("build/select.ppm");tap(K_OK);assert(app.screen==PLAY);
   for(int i=0;i<370;i++)app_tick(0);shot("build/game.ppm");tap(K_BACK);assert(app.screen==PAUSE);Player frozen=app.player;for(int i=0;i<100;i++)app_tick(0);assert(!memcmp(&frozen,&app.player,sizeof(frozen)));shot("build/pause.ppm");
-  tap(K_DOWN);tap(K_DOWN);tap(K_OK);assert(app.practice);tap(K_CHECK);assert(app.has_checkpoint);Player cp=app.checkpoint;for(int i=0;i<2000;i++)app_tick(0);assert(app.deaths>1&&app.checkpoint.x==cp.x);
-  app_init();tap(K_RIGHT);tap(K_OK);assert(app.screen==SLOTS);tap(K_OK);assert(app.screen==EDITOR);tap(K_RIGHT);tap(K_TOOL);tap(K_OK);assert(app.save.custom[0].count==1);tap(K_UNDO);assert(app.save.custom[0].count==0);tap(K_OK);tap(K_SAVE);assert(app.save_ok);shot("build/editor.ppm");tap(K_EXE);assert(app.testing);tap(K_BACK);tap(K_DOWN);tap(K_DOWN);tap(K_DOWN);tap(K_OK);assert(app.screen==EDITOR);tap(K_BACK);assert(app.screen==SLOTS);app_init();assert(app.loaded&&app.save.custom[0].count==1);
+  tap(K_LEFT);tap(K_OK);assert(app.practice);tap(K_CHECK);assert(app.has_checkpoint);Player cp=app.checkpoint;for(int i=0;i<2000;i++)app_tick(0);assert(app.deaths>1&&app.checkpoint.x==cp.x);
+  app_init();tap(K_RIGHT);tap(K_OK);assert(app.screen==SLOTS);tap(K_OK);assert(app.screen==EDITOR);tap(K_RIGHT);tap(K_TOOL);tap(K_OK);assert(app.save.custom[0].count==1);tap(K_CHECK);assert(app.edit_mode==1);tap(K_OK);assert(app.save.custom[0].objects[0].rot==1);tap(K_UNDO);assert(app.save.custom[0].objects[0].rot==0);tap(K_CHECK);assert(app.edit_mode==2);tap(K_OK);assert(app.save.custom[0].count==0);tap(K_UNDO);assert(app.save.custom[0].count==1);tap(K_CHECK);assert(app.edit_mode==0);tap(K_SAVE);assert(app.save_ok);shot("build/editor.ppm");tap(K_EXE);assert(app.testing);tap(K_BACK);tap(K_RIGHT);tap(K_OK);assert(app.screen==EDITOR);tap(K_BACK);assert(app.screen==SLOTS);app_init();assert(app.loaded&&app.save.custom[0].count==1);
   app_start(6,false,false);app.player.x=8400;app.player.y=150;app.player.mode=1;app.player.tick=500;shot("build/ship.ppm");
+  app.player.complete=true;app.player.coins=2;app.player.jumps=46;app_tick(0);assert(app.screen==COMPLETE);app.time+=130;shot("build/complete.ppm");
+  app_init();tap(K_RIGHT);tap(K_RIGHT);tap(K_OK);assert(app.screen==SETTINGS);shot("build/settings.ppm");tap(K_DOWN);tap(K_OK);assert(!app.save.percent);tap(K_BACK);assert(app.screen==HOME);app_init();assert(!app.save.percent);
 }
 static int replay(int index,const char *path){
   FILE *f=fopen(path,"r");if(!f)return 2;int ticks[5000],values[5000],n=0,t,v;char linebuf[256];
