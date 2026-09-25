@@ -45,11 +45,16 @@ static void save_ppm(const char *dir, const char *name) {
   }
   fclose(f);
 }
-/* Runs the app for n physics ticks with keys held, 40 frames per second. */
+/* Runs the app for n physics ticks with keys held, 40 frames per second,
+ * drawing every frame like the device does. */
+static bool draw_frames = true;
 static void run(uint32_t keys, int n) {
   for (int i = 0; i < n; i++) {
     app_tick(keys);
-    if (++frame_ticks % 6 == 0) app_frame(6.0f / ND_HZ);
+    if (++frame_ticks % 6 == 0) {
+      app_frame(6.0f / ND_HZ);
+      if (draw_frames) render();
+    }
   }
 }
 static void tap(uint32_t k) { run(k, 6); run(0, 6); }
@@ -430,12 +435,14 @@ static int shots(const char *dir) {
   run(0, 6);
   bool held = false;
   int pos = 0;
+  draw_frames = false;
   for (int i = 1; i < 200 * ND_HZ && !app.g.complete; i++) {
     while (pos < n && ticks[pos] <= i) held = vals[pos++] != 0;
     run(held ? K_OK : 0, 1);
     if (i == 3000) { render(); save_ppm(dir, "11_play_mid"); }
     if (i == 12000) { render(); save_ppm(dir, "12_play_ship"); }
   }
+  draw_frames = true;
   run(0, 120);
   render(); save_ppm(dir, "13_complete_rays");
   run(0, 240 * 2 - 120 + 60);

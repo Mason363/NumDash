@@ -323,6 +323,7 @@ static void draw_grid(void) {
 }
 
 void scene_draw(void) {
+  if (!G) return;
   scene_background(bg_col, G->bg_x, G->cam_y);
   if (O.editor) draw_grid();
   for (int k = 0; k < nitems; k++) {

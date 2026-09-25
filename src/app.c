@@ -184,7 +184,7 @@ void app_frame(float dt) {
       app.fade = 1;
       app.fading_out = false;
       enter(app.next);
-      return;
+      dt = 0;   /* the new screen still prepares its first frame below */
     }
   } else if (app.fade > 0) {
     app.fade -= dt / 0.25f;
