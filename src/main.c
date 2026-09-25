@@ -1,34 +1,57 @@
+/* Main loop: fixed 240 Hz physics, one rendered frame per loop iteration,
+ * drawn in horizontal strips straight to the LCD. */
 #include "app.h"
-#include "draw.h"
 #if PLATFORM_DEVICE
 #include <eadk.h>
-const char eadk_app_name[] __attribute__((section(".rodata.eadk_app_name")))="NumDash";
-const uint32_t eadk_api_level __attribute__((section(".rodata.eadk_api_level")))=0;
+const char eadk_app_name[] __attribute__((section(".rodata.eadk_app_name"))) = "NumDash";
+const uint32_t eadk_api_level __attribute__((section(".rodata.eadk_api_level"))) = 0;
 #endif
 
-int main(int argc,char **argv) {
-  (void)argc;(void)argv;
-  if(!platform_init())return 1;
+int main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
+  if (!platform_init()) return 1;
   app_init();
-#if PLATFORM_DEVICE
-  const unsigned render_hz=30; /* The N0120 LCD refreshes at 40 Hz. */
-#else
-  const unsigned render_hz=60;
+  uint32_t prev = platform_millis(), acc = 0, fps_start = prev, frames = 0, pending = 0, render_ms = 30;
+  while (app.running) {
+    uint32_t now = platform_millis(), elapsed = now - prev;
+    prev = now;
+    /* never advance further than the player could have seen */
+    if (elapsed > 50) elapsed = 50;
+    acc += elapsed * ND_HZ;
+    uint32_t keys = platform_keys();
+    if (acc < 1000) {
+      pending |= keys;
+    } else {
+      keys |= pending;
+      pending = 0;
+      while (acc >= 1000 && app.running) {
+        app_tick(keys);
+        acc -= 1000;
+      }
+    }
+    if (!app.running) break;
+    app_frame(elapsed / 1000.0f);
+    /* Sync to the LCD refresh when a frame fits comfortably in it. */
+    platform_frame_begin(render_ms < 22);
+    uint32_t t0 = platform_millis();
+    for (int s = 0; s < STRIPS; s++) {
+      gfx_begin_strip(s);
+      app_draw();
+      platform_strip(s * STRIP_H, STRIP_H, gfx_strip);
+    }
+    platform_frame_end();
+    render_ms = (render_ms * 3 + (platform_millis() - t0)) / 4;
+    frames++;
+    if (now - fps_start >= 1000) {
+      app.fps = frames * 1000 / (now - fps_start);
+      frames = 0;
+      fps_start = now;
+    }
+#if !PLATFORM_DEVICE
+    if (elapsed < 8) platform_sleep(8 - elapsed);
 #endif
-  uint32_t previous=platform_millis(),accumulator=0,render_acc=1000,fps_start=previous,frames=0;
-  uint32_t last_keys=0,pending_keys=0;
-  while(app.running) {
-    uint32_t now=platform_millis(),elapsed=now-previous;previous=now;
-    /* Never advance far past a hazard that has not been shown on the LCD. */
-    if(elapsed>50)elapsed=50;
-    accumulator+=elapsed*ND_HZ;render_acc+=elapsed*render_hz;
-    uint32_t keys=platform_keys();
-    pending_keys|=keys&~last_keys;
-    last_keys=keys;
-    while(accumulator>=1000){bool last=accumulator<2000;app_tick(keys|(last?pending_keys:0));if(last)pending_keys=0;accumulator-=1000;}
-    if(render_acc>=1000){app_render();platform_present(frame,palette);render_acc%=1000;frames++;}
-    if(now-fps_start>=1000){app.fps=frames*1000/(now-fps_start);frames=0;fps_start=now;}
-    platform_sleep(1);
   }
-  platform_close();return 0;
+  platform_close();
+  return 0;
 }

@@ -1,105 +1,197 @@
 #!/usr/bin/env python3
-"""Compile the checked-in GMD references and original courses to sorted C data."""
+"""Compile the checked-in GMD level exports to compressed C data.
+
+Objects become 6-byte records {dx:u16, y:i16, type:u8, xform:u8} sorted by x
+and stored as raw DEFLATE; the runtime inflates them straight into its object
+array and prefix-sums dx. Colour, enter-effect and trail triggers become a
+small uncompressed event list. Also emits the C object catalogue.
+"""
 import base64
 import collections
 import gzip
 import hashlib
 import json
+import struct
+import sys
+import zlib
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-NAMES = ['StereoMadness', 'BackOnTrack', 'Polargeist', 'DryOut']
-TITLES = ['STEREO MADNESS', 'BACK ON TRACK', 'POLARGEIST', 'DRY OUT']
-def rgb(r,g,b): return ((int(r)>>3)<<11)|((int(g)>>2)<<5)|(int(b)>>3)
-def obj(x,y,id=8,rot=0,color=0,duration=0): return [round(x),round(y),id,rot,0,color,duration]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import objdefs as od  # noqa: E402
+
+GD_SOURCE = 'https://github.com/AleFunky/gd3ds/tree/cdea1c2fad3d67fa17d2cfa781013b0ee58bb280/romfs/main_levels'
+# file, title, difficulty (1 easy .. 5 insane), stars, pulse bpm
+LEVELS = [
+    ('StereoMadness', 'STEREO MADNESS', 1, 1, 160),
+    ('BackOnTrack', 'BACK ON TRACK', 1, 2, 130),
+    ('Polargeist', 'POLARGEIST', 2, 3, 165),
+    ('DryOut', 'DRY OUT', 2, 4, 140),
+    ('BaseAfterBase', 'BASE AFTER BASE', 3, 5, 142),
+    ('CantLetGo', "CAN'T LET GO", 3, 6, 144),
+    ('Jumper', 'JUMPER', 4, 7, 175),
+]
+
 
 def decode(path):
     nodes = list(ET.parse(path).getroot()[0])
-    props = {nodes[i].text:nodes[i+1].text for i in range(0,len(nodes),2)}
-    encoded=props['k4']
-    raw=gzip.decompress(base64.urlsafe_b64decode(encoded+'='*(-len(encoded)%4))).decode()
-    entries=[]
-    for part in raw.split(';'):
-        items=part.split(',')
-        entries.append(dict(zip(items[::2],items[1::2])))
-    colors={}
-    for channel in entries[0].get('kS38','').split('|'):
-        items=channel.split('_'); c=dict(zip(items[::2],items[1::2]))
-        if '6' in c: colors[c['6']]=rgb(c.get('1',0),c.get('2',0),c.get('3',0))
-    result=[]
-    for o in entries[1:]:
-        if '1' not in o: continue
-        id=int(o['1']); rot=round(float(o.get('6',0))/90)%4
-        color=rgb(o.get('7',0),o.get('8',0),o.get('9',0)) if id in (29,30) else 0
-        a=obj(float(o.get('2',0)),float(o.get('3',0)),id,rot,color,round(float(o.get('10',0))*240) if id in (29,30) else 0)
-        a[4]=(int(o.get('4',0))&1)|((int(o.get('5',0))&1)<<1)
-        result.append(a)
-    return result,colors.get('1000',0x2199),colors.get('1001',0x1019)
+    props = {nodes[i].text: nodes[i + 1].text for i in range(0, len(nodes), 2)}
+    enc = props['k4']
+    raw = gzip.decompress(base64.urlsafe_b64decode(enc + '=' * (-len(enc) % 4))).decode()
+    parts = raw.split(';')
+    header = dict(zip(parts[0].split(',')[::2], parts[0].split(',')[1::2]))
+    colors = {}
+    for ch in header.get('kS38', '').split('|'):
+        if not ch:
+            continue
+        it = ch.split('_')
+        d = dict(zip(it[::2], it[1::2]))
+        colors[int(d['6'])] = (int(d.get('1', 255)), int(d.get('2', 255)), int(d.get('3', 255)))
+    objs = []
+    for p in parts[1:]:
+        it = p.split(',')
+        d = dict(zip(it[::2], it[1::2]))
+        if '1' in d:
+            objs.append(d)
+    return header, colors, objs
 
-def originals():
-    # Each phrase has a readable approach and recovery. Repeated motifs develop
-    # over the course; portal corridors reserve room to learn the new mode.
-    courses=[]
-    a=[]
-    for x,n in [(540,1),(900,1),(1320,2),(1740,1),(2160,2),(2580,3),(3120,1),(3540,2)]:
-        a += [obj(x+j*30,15) for j in range(n)]
-    for x in [4140,4740,5340]:
-        a += [obj(x,2,35)]+[obj(x+60+j*30,15) for j in range(5)]
-    a += [obj(6000,165,13),obj(7800,149,12)]
-    for x in range(6330,7620,360):
-        a += [obj(x,15,1),obj(x,285,1),obj(x,255,8,2)]
-    for x in [8250,8640,9060]: a += [obj(x,15),obj(x+30,15)]
-    a += [obj(2850,105,1329),obj(6900,150,1329),obj(9180,105,1329)]
-    courses.append(('NEON CIRCUIT','ORIGINAL / RHYTHM',a,9700,0x249b,0x0152,2,128))
-    a=[]
-    for x in [540,1050,1560]: a += [obj(x,15),obj(x+30,15)]
-    for x in [2190,2790,3390]:
-        a += [obj(x,2,35)] + [obj(x+60+j*30,15) for j in range(4)] + [obj(x+180,120,1329)]
-    a += [obj(4140,165,13),obj(7470,149,12)]
-    for k,x in enumerate(range(4500,7200,330)):
-        a += [obj(x,15,1),obj(x,285,1)]
-        a += [obj(x,45 if k%2==0 else 255,8,0 if k%2==0 else 2)]
-    for x in [7980,8430,8880,9330]: a += [obj(x,15),obj(x+30,15),obj(x+60,15)]
-    courses.append(('SKYLINE','ORIGINAL / FLIGHT',a,9900,0x92b8,0x4832,3,140))
-    a=[]
-    for x in [540,990,1440,1890]: a += [obj(x,15),obj(x+30,15)]
-    a += [obj(2550,100,11)]
-    for x in range(2490,5191,30): a += [obj(x,285,1)]
-    for x in [2940,3420,3900,4380]: a += [obj(x,255,8,2),obj(x+30,255,8,2)]
-    a += [obj(4860,225,10)]
-    for x in [5550,6060,6570]: a += [obj(x,2,35)]+[obj(x+60+j*30,15) for j in range(5)]
-    a += [obj(7290,165,13),obj(9270,149,12)]
-    for x in range(7650,9090,360): a += [obj(x,15,8),obj(x,285,8,2)]
-    for x in [9690,10110,10530]: a += [obj(x,15),obj(x+30,15)]
-    a += [obj(1650,100,1329),obj(4050,200,1329),obj(8430,150,1329)]
-    courses.append(('AFTERGLOW','ORIGINAL / GRAVITY',a,11100,0x04b3,0x0250,4,132))
-    for _,_,a,ln,bg,gr,_,_ in courses:
-        for x,c in [(ln//3,0x7918),(2*ln//3,bg)]: a.append(obj(x,0,29,color=c,duration=480))
-    return courses
+
+def compile_level(path):
+    header, colors, raw = decode(path)
+    objects, events, skipped = [], [], collections.Counter()
+    for order, d in enumerate(raw):
+        gid = int(d['1'])
+        x = int(round(float(d.get('2', 0))))
+        y = int(round(float(d.get('3', 0))))
+        if gid in od.COLOR_TRIGGERS:
+            chan = od.COLOR_TRIGGERS[gid]
+            dur = int(round(float(d.get('10', 0)) * 1000))
+            flags = (1 if d.get('11') == '1' else 0) | (2 if d.get('14') == '1' else 0) | (4 if d.get('17') == '1' else 0)
+            events.append((x, y, od.EV_COLOR, chan, int(d.get('7', 255)), int(d.get('8', 255)), int(d.get('9', 255)), flags, dur, order))
+            continue
+        if gid in od.FADE_TRIGGERS:
+            events.append((x, y, od.EV_FADE, od.FADE_TRIGGERS[gid], 0, 0, 0, 0, 0, order))
+            continue
+        if gid in od.TRAIL_TRIGGERS:
+            events.append((x, y, od.EV_TRAIL, od.TRAIL_TRIGGERS[gid], 0, 0, 0, 0, 0, order))
+            continue
+        t = od.BY_ID.get(gid)
+        if not t:
+            skipped[gid] += 1
+            continue
+        rot = int(round(float(d.get('6', 0)) / 90)) % 4
+        xf = rot | (4 if d.get('4') == '1' else 0) | (8 if d.get('5') == '1' else 0)
+        objects.append((x, y, t, xf, order))
+    objects.sort(key=lambda o: (o[0], o[4]))
+    # GD triggers fire in x order, ties broken by higher y first
+    events.sort(key=lambda e: (e[0], -e[1], e[9]))
+    return header, colors, objects, events, skipped
+
+
+def records(objects):
+    out = bytearray()
+    px = 0
+    for (x, y, t, xf, _) in objects:
+        assert 0 <= x < 65536 and -32768 <= y < 32768 and x >= px
+        out += struct.pack('<HhBB', x - px, y, t, xf)
+        px = x
+    return bytes(out)
+
+
+def deflate(data):
+    c = zlib.compressobj(9, zlib.DEFLATED, -15, 9)
+    return c.compress(data) + c.flush()
+
+
+def c_bytes(name, data):
+    lines = ['static const uint8_t %s[%d] = {' % (name, len(data))]
+    for i in range(0, len(data), 40):
+        lines.append('  ' + ','.join(str(b) for b in data[i:i + 40]) + ',')
+    lines.append('};')
+    return lines
+
+
+def emit_objdefs():
+    h = ['/* Generated by tools/levels.py. Do not edit. */', '#ifndef NUMDASH_OBJDEFS_H', '#define NUMDASH_OBJDEFS_H',
+         '#include <stdint.h>', 'enum {', '  OT_NONE = 0,']
+    for i, o in enumerate(od.OBJECTS):
+        h.append('  OT_%s = %d,' % (o[0], i + 1))
+    h.append('  OT_COUNT = %d' % (len(od.OBJECTS) + 1))
+    h.append('};')
+    h.append('enum { HIT_NONE, HIT_SOLID, HIT_HAZARD, HIT_SPECIAL };')
+    h.append('enum { ' + ', '.join('SP_' + s for s in od.SP) + ' };')
+    h.append('enum { ' + ', '.join('CT_' + s for s in od.CT) + ' };')
+    h.append('enum { ' + ', '.join('LAYER_' + s for s in od.LAYERS) + ', LAYER_COUNT };')
+    h.append('enum { PF_PULSE = 1, PF_RANDOM3 = 2, PF_COIN = 4, PF_ANIM = 8 };')
+    h.append('enum { EV_COLOR = 1, EV_FADE = 2, EV_TRAIL = 3 };')
+    h.append('typedef struct { int16_t sprite; int8_t dx4, dy4; uint8_t layer, ctype, flags; } ObjPart;')
+    h.append('typedef struct { uint16_t gd_id; uint8_t hit, special; uint16_t w10, h10; int8_t editor_dy; uint8_t nparts; ObjPart parts[2]; } ObjDef;')
+    h.append('extern const ObjDef objdefs[OT_COUNT];')
+    h.append('#define EDITOR_TYPES %d' % len(od.EDITOR))
+    h.append('extern const uint8_t editor_types[EDITOR_TYPES];')
+    h.append('#endif')
+    (ROOT / 'src/objdefs.h').write_text('\n'.join(h) + '\n')
+
+    c = ['/* Generated by tools/levels.py. Do not edit. */', '#include "objdefs.h"', '#include "assets.h"',
+         'const ObjDef objdefs[OT_COUNT] = {', '  {0,0,0,0,0,0,0,{{-1,0,0,0,0,0},{-1,0,0,0,0,0}}},']
+    for (name, ids, hit, w, hh, sp, edy, parts) in od.OBJECTS:
+        ps = []
+        for (spr, dx, dy, layer, ct, fl) in parts:
+            ident = 'SPR_' + ''.join(ch.upper() if ch.isalnum() else '_' for ch in spr)
+            ps.append('{%s,%d,%d,LAYER_%s,CT_%s,%d}' % (ident, int(round(dx * 4)), int(round(dy * 4)), layer, ct, fl))
+        while len(ps) < 2:
+            ps.append('{-1,0,0,0,0,0}')
+        c.append('  {%d,%d,SP_%s,%d,%d,%d,%d,{%s}},' % (ids[0], hit, sp, int(round(w * 10)), int(round(hh * 10)), edy, len(parts), ','.join(ps)))
+    c.append('};')
+    c.append('const uint8_t editor_types[EDITOR_TYPES] = {' + ','.join('OT_' + n for n in od.EDITOR) + '};')
+    (ROOT / 'src/objdefs.c').write_text('\n'.join(c) + '\n')
+
 
 def main():
-    courses=[]; manifest=[]
-    for i,name in enumerate(NAMES):
-        path=ROOT/'levels/reference'/f'{name}.gmd'
-        a,bg,gr=decode(path)
-        # A finish runway follows the original final object.
-        length=max(o[0] for o in a)+240
-        courses.append((TITLES[i],'ROBTop / ORIGINAL LAYOUT',a,length,bg,gr,i+1,[160,130,165,140][i]))
-        manifest.append({'name':TITLES[i],'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'objects':len(a),'last_object_x':length-240,'object_ids':dict(collections.Counter(str(o[2]) for o in a))})
-    courses+=originals()
-    output=['/* Generated by tools/levels.py. Do not edit. */','#include "game.h"']
-    for i,(_,_,a,*_) in enumerate(courses):
-        a.sort(key=lambda o:o[0])
-        assert len(a)<=4096 and all(0<=o[0]<=32000 and -300<=o[1]<=1500 for o in a)
-        output.append(f'static const Object objects_{i}[] = {{')
-        output += ['  {'+','.join(map(str,o))+'},' for o in a]
-        output.append('};')
-    output.append('const Level nd_levels[ND_BUILTINS] = {')
-    for i,(name,credit,a,length,bg,gr,diff,bpm) in enumerate(courses):
-        output.append(f'  {{"{name}","{credit}",objects_{i},{len(a)},{length},{bg},{gr},{diff},{bpm}}},')
-    output.append('};\n')
-    (ROOT/'src/levels.c').write_text('\n'.join(output))
-    (ROOT/'levels/manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print('Compiled',sum(len(c[2]) for c in courses),'objects across',len(courses),'levels')
-if __name__=='__main__': main()
+    emit_objdefs()
+    out = ['/* Generated by tools/levels.py from levels/reference. Do not edit. */', '#include "level.h"']
+    table, manifest = [], []
+    total_raw = total_z = 0
+    for i, (fname, title, diff, stars, bpm) in enumerate(LEVELS):
+        path = ROOT / 'levels/reference' / (fname + '.gmd')
+        header, colors, objects, events, skipped = compile_level(path)
+        rec = records(objects)
+        z = deflate(rec)
+        assert zlib.decompress(z, -15) == rec
+        total_raw += len(rec)
+        total_z += len(z)
+        last_x = max(o[0] for o in objects)
+        end_x = last_x + 330
+        wall_x = int(round(end_x / 30.0)) * 30
+        bg = colors.get(1000, (40, 125, 255))
+        g1 = colors.get(1001, (0, 102, 255))
+        line = colors.get(1002, (255, 255, 255))
+        obj = colors.get(1004, (255, 255, 255))
+        out += c_bytes('level%d_data' % i, z)
+        out.append('static const LevelEvent level%d_events[%d] = {' % (i, max(1, len(events))))
+        for (x, y, kind, arg, r, g, b, flags, dur, _) in events:
+            out.append('  {%d,%d,%d,%d,%d,%d,%d,%d,%d},' % (x, y, kind, arg, r, g, b, flags, dur))
+        if not events:
+            out.append('  {0,0,0,0,0,0,0,0,0},')
+        out.append('};')
+        start_mode = int(header.get('kA2', 0))
+        table.append('  {"%s",level%d_data,level%d_events,%d,%d,%d,%d,%d,%d,{%d,%d,%d},{%d,%d,%d},{%d,%d,%d},{%d,%d,%d},%d,%d,%d,%d},' % (
+            title.replace('"', '\\"'), i, i, len(z), len(objects), len(events), end_x, wall_x, 0,
+            *bg, *g1, *line, *obj, diff, stars, bpm, start_mode))
+        manifest.append({'name': title, 'file': 'levels/reference/%s.gmd' % fname,
+                         'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                         'objects': len(objects), 'events': len(events), 'compressed_bytes': len(z),
+                         'skipped_ids': {str(k): v for k, v in sorted(skipped.items())}})
+        if skipped:
+            print('%s: skipped ids %s' % (title, dict(skipped)))
+    out.append('const LevelDef level_defs[LEVEL_COUNT] = {')
+    out += table
+    out.append('};')
+    (ROOT / 'src/leveldata.c').write_text('\n'.join(out) + '\n')
+    (ROOT / 'levels/manifest.json').write_text(json.dumps({'source': GD_SOURCE, 'levels': manifest}, indent=2) + '\n')
+    print('levels: %d records, %d bytes raw -> %d bytes deflated' % (sum(m['objects'] for m in manifest), total_raw, total_z))
+
+
+if __name__ == '__main__':
+    main()
