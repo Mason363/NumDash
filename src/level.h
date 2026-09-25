@@ -33,7 +33,11 @@ typedef struct {
   uint16_t count, event_count, end_x, wall_x;
   uint8_t colors[CH_COUNT][3];
   uint8_t bpm, start_mode, difficulty, stars;
+  uint16_t coin_obj[3];     /* object indices of the secret coins, in order */
+  uint8_t coin_count;
 } Level;
+/* Fills coin_obj / coin_count from the object list. */
+void level_index_coins(Level *L);
 
 extern LObj level_objs[MAX_OBJECTS];
 int inflate_raw(uint8_t *out, size_t cap, const uint8_t *in, size_t len);

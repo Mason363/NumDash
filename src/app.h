@@ -7,7 +7,7 @@
 #include "save.h"
 #include "scene.h"
 
-typedef enum { SCR_MENU, SCR_SELECT, SCR_PLAY, SCR_GARAGE, SCR_CREATOR, SCR_EDITOR } Screen;
+typedef enum { SCR_MENU, SCR_SELECT, SCR_PLAY, SCR_GARAGE, SCR_CREATOR, SCR_EDITOR, SCR_LOADING } Screen;
 enum { DLG_NONE, DLG_QUIT, DLG_INFO };
 #define MAX_CHECKPOINTS 40
 

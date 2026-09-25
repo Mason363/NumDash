@@ -48,7 +48,7 @@ static void kill(Game *g, int obj) {
 
 unsigned game_coin_index(const Level *L, unsigned obj) {
   unsigned k = 0;
-  for (unsigned i = 0; i < obj && i < L->count; i++) if (L->objs[i].type == OT_COIN) k++;
+  while (k < L->coin_count && L->coin_obj[k] < obj) k++;
   return k;
 }
 

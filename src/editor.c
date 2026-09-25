@@ -43,6 +43,7 @@ static void fill_level(Level *L, int slot, const CustomMeta *m, unsigned n) {
   memset(L->colors[CH_OBJ], 255, 3);
   L->bpm = 120;
   L->start_mode = m->flags & 1 ? MODE_SHIP : MODE_CUBE;
+  level_index_coins(L);
 }
 
 bool editor_load_slot(int slot, Level *L) {

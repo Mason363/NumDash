@@ -3,6 +3,7 @@
 #include "app.h"
 #include "ui.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Colours the main menu cycles through and the level select page tints. */
@@ -100,7 +101,7 @@ static void main_activate(int id) {
 
 static void main_draw(void) {
   scene_draw();
-  gfx_text_center(FONT_HUGE, 160, 46, "GEOMETRY DASH", rgb(215, 255, 100), rgb(70, 180, 10), 256);
+  gfx_layer_draw(160, 38, 256, rgb(215, 255, 100), rgb(70, 180, 10), 256);
   gfx_text_center(FONT_SMALL, 160, 62, "NUMWORKS EDITION", rgb(255, 255, 255), rgb(200, 230, 255), 230);
   ui_sprite(SPR_BTN_GARAGE, 62, 118, btn_scale(0), 256);
   ui_sprite(SPR_BTN_PLAY, 160, 114, btn_scale(1), 256);
@@ -298,11 +299,54 @@ static void garage_draw(void) {
   ui_side_art();
 }
 
+/* ------------------------------------------------------------ loading */
+
+static const char *const tips[] = {
+  "LISTEN TO THE MUSIC TO HELP TIME YOUR JUMPS", "BACK FOR MORE ARE YA?", "USE PRACTICE MODE TO LEARN THE LAYOUT OF A LEVEL",
+  "IF AT FIRST YOU DON'T SUCCEED, TRY, TRY AGAIN...", "CUSTOMIZE YOUR CHARACTER'S ICON AND COLOR!",
+  "SPIKES ARE NOT YOUR FRIENDS. DON'T FORGET TO JUMP", "BUILD YOUR OWN LEVELS USING THE LEVEL EDITOR",
+  "CAN YOU BEAT THEM ALL?", "PRO TIP: DON'T CRASH", "HOLD DOWN TO KEEP JUMPING", "PRO TIP: JUMP",
+  "PLAY, CRASH, RINSE AND REPEAT", "ONLY ONE BUTTON REQUIRED TO CRASH", "IT'S ALL IN THE TIMING", "FAKE SPIKES ARE FAKE",
+  "WHERE DID I PUT THAT COIN...", "CALCULATING CHANCE OF SUCCESS", "LOADING WILL BE FINISHED... SOON"};
+static int tip;
+
+static void loading_draw(void) {
+  scene_background(rgb(0, 102, 255), 0, 0);
+  gfx_layer_draw(160, 96, 256, rgb(215, 255, 100), rgb(70, 180, 10), 256);
+  float t = app.t / 1.2f;
+  if (t > 1) t = 1;
+  int w = 200, x = 60, y = 132;
+  gfx_round_rect(x - 2, y - 2, w + 4, 14, 6, 0, 180);
+  gfx_round_rect(x, y, w, 10, 5, rgb(20, 20, 20), 256);
+  int fw = (int)((w - 4) * t);
+  if (fw > 6) {
+    gfx_round_rect(x + 2, y + 2, fw, 6, 3, rgb(90, 255, 30), 256);
+    gfx_add(x + 4, y + 3, fw - 4, 1, 0xffff, 90);
+  }
+  /* long tips wrap onto two lines at the space nearest the middle */
+  const char *t0 = tips[tip];
+  if (gfx_text_width(FONT_SMALL, t0) <= 300) {
+    gfx_text_center(FONT_SMALL, 160, 170, t0, 0xffff, 0xffff, 256);
+    return;
+  }
+  int n = (int)strlen(t0), cut = -1;
+  for (int i = 0; i < n; i++)
+    if (t0[i] == ' ' && (cut < 0 || abs(i - n / 2) < abs(cut - n / 2))) cut = i;
+  char line[64];
+  memcpy(line, t0, (size_t)cut);
+  line[cut] = 0;
+  gfx_text_center(FONT_SMALL, 160, 166, line, 0xffff, 0xffff, 256);
+  gfx_text_center(FONT_SMALL, 160, 180, t0 + cut + 1, 0xffff, 0xffff, 256);
+}
+
 /* ------------------------------------------------------------ dispatch */
 
 void menu_enter(Screen s) {
   popup = POP_NONE;
-  if (s == SCR_MENU) {
+  if (s == SCR_LOADING) {
+    tip = (int)(frand() * (sizeof(tips) / sizeof(tips[0])));
+    gfx_layer_build(FONT_HUGE, "GEOMETRY DASH");
+  } else if (s == SCR_MENU) {
     memset(&menu_level, 0, sizeof(menu_level));
     menu_level.name = "";
     menu_level.objs = level_objs;
@@ -310,6 +354,7 @@ void menu_enter(Screen s) {
     for (int c = 0; c < CH_COUNT; c++) memset(menu_level.colors[c], 255, 3);
     app.g.L = NULL;
     runner_reset();
+    gfx_layer_build(FONT_HUGE, "GEOMETRY DASH");
     app.sel = 1;
   } else if (s == SCR_SELECT) {
     app.select_page = app.level < LEVEL_COUNT ? app.level : 0;
@@ -336,6 +381,9 @@ void menu_tick(void) {
       break;
     case SCR_SELECT: select_tick(); break;
     case SCR_GARAGE: garage_tick(); break;
+    case SCR_LOADING:
+      if (app.t >= 1.35f || (app.hit && app.t > 0.2f)) app_go(SCR_MENU);
+      break;
     default: break;
   }
 }
@@ -368,6 +416,7 @@ void menu_draw(void) {
       break;
     case SCR_SELECT: select_draw(); break;
     case SCR_GARAGE: garage_draw(); break;
+    case SCR_LOADING: loading_draw(); break;
     default: break;
   }
 }

@@ -57,7 +57,9 @@ static void settle(void) { run(0, 240); }
 static void fresh_app(void) {
   memset(store, 0, sizeof(store));
   app_init();
-  settle();
+  assert(app.screen == SCR_LOADING);
+  run(0, 240 * 2 + 60);   /* loading screen, then the fade into the menu */
+  assert(app.screen == SCR_MENU);
 }
 
 /* ------------------------------------------------------------ unit tests */

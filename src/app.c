@@ -73,7 +73,7 @@ void app_init(void) {
   app.level = progress.last_level < LEVEL_COUNT ? progress.last_level : 0;
   app.select_page = app.level;
   app.select_scroll = (float)app.level;
-  enter(SCR_MENU);
+  enter(SCR_LOADING);
   app.fade = 1;
 }
 
@@ -87,24 +87,29 @@ static void quit(void) {
 /* ------------------------------------------------------------ dialogs */
 
 static float dialog_t;
+static int dialog_sel, saved_sel;
 static void dialog_open(int kind, const char *title, const char *text) {
   app.dialog = kind;
   app.dialog_title = title;
   app.dialog_text = text;
   dialog_t = 0;
-  app.sel = kind == DLG_QUIT ? 0 : 0;
+  dialog_sel = 0;
+  saved_sel = app.sel;
+}
+static void dialog_close(void) {
+  app.dialog = DLG_NONE;
+  app.sel = saved_sel;
 }
 static void dialog_tick(void) {
   if (app.dialog == DLG_QUIT) {
-    if (app_hit(K_LEFT | K_RIGHT)) app.sel ^= 1;
-    if (app_hit(K_BACK)) { app.dialog = DLG_NONE; app.sel = 0; return; }
+    if (app_hit(K_LEFT | K_RIGHT)) dialog_sel ^= 1;
+    if (app_hit(K_BACK)) { dialog_close(); return; }
     if (app_accept()) {
-      if (app.sel == 1) quit();
-      app.dialog = DLG_NONE;
-      app.sel = 0;
+      if (dialog_sel == 1) quit();
+      dialog_close();
     }
   } else if (app_accept() || app_hit(K_BACK)) {
-    app.dialog = DLG_NONE;
+    dialog_close();
   }
 }
 static void dialog_draw(void) {
@@ -128,8 +133,8 @@ static void dialog_draw(void) {
     y += 13;
   }
   if (app.dialog == DLG_QUIT) {
-    ui_text_button(118, 154, 76, 26, "CANCEL", BTN_GREEN, app.sel == 0 ? 1.1f : 1.0f);
-    ui_text_button(202, 154, 60, 26, "YES", BTN_GREEN, app.sel == 1 ? 1.1f : 1.0f);
+    ui_text_button(118, 154, 76, 26, "CANCEL", BTN_GREEN, dialog_sel == 0 ? 1.1f : 1.0f);
+    ui_text_button(202, 154, 60, 26, "YES", BTN_GREEN, dialog_sel == 1 ? 1.1f : 1.0f);
   } else {
     ui_text_button(160, 154, 60, 26, "OK", BTN_GREEN, 1.1f);
   }
@@ -143,9 +148,16 @@ void app_tick(uint32_t keys) {
   app.ticks++;
   uint32_t hit = keys & ~app.prev_keys;
   const uint32_t arrows = K_LEFT | K_RIGHT | K_UP | K_DOWN;
+  static uint32_t held_since;
   if (keys & arrows) {
-    if ((keys & arrows) != (app.prev_keys & arrows)) app.repeat_at = app.ticks + 96;
-    else if (app.ticks >= app.repeat_at) { hit |= keys & arrows; app.repeat_at = app.ticks + 24; }
+    if ((keys & arrows) != (app.prev_keys & arrows)) {
+      app.repeat_at = app.ticks + 96;
+      held_since = app.ticks;
+    } else if (app.ticks >= app.repeat_at) {
+      hit |= keys & arrows;
+      /* 10 repeats per second, then 24 after holding for a while */
+      app.repeat_at = app.ticks + (app.ticks - held_since > 360 ? 10 : 24);
+    }
   }
   app.prev_keys = keys;
   app.keys = keys;

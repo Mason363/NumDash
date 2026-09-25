@@ -31,7 +31,14 @@ bool level_load_builtin(Level *L, unsigned index) {
   L->start_mode = d->start_mode;
   L->difficulty = d->difficulty;
   L->stars = d->stars;
+  level_index_coins(L);
   return level_valid(L);
+}
+
+void level_index_coins(Level *L) {
+  L->coin_count = 0;
+  for (unsigned i = 0; i < L->count && L->coin_count < 3; i++)
+    if (L->objs[i].type == OT_COIN) L->coin_obj[L->coin_count++] = (uint16_t)i;
 }
 
 unsigned level_lower_bound(const Level *L, int x) {

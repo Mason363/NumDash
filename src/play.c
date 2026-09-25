@@ -43,11 +43,7 @@ static const char *const complete_msgs[] = {
 
 static color_t white_if_black(color_t c) { return c == 0 ? 0xffff : c; }
 
-static unsigned level_coins(void) {
-  unsigned n = 0;
-  for (unsigned i = 0; i < app.L.count && n < 3; i++) if (app.L.objs[i].type == OT_COIN) n++;
-  return n;
-}
+static unsigned level_coins(void) { return app.L.coin_count; }
 
 static void flush_jumps(void) {
   unsigned j = app.g.jumps >= jumps_counted ? app.g.jumps - jumps_counted : 0;
@@ -184,12 +180,8 @@ static void on_complete(void) {
   phase2 = false;
   rings_a = rings_b = fireworks = 0;
   coins_run = coins_new = 0;
-  unsigned k = 0;
-  for (unsigned i = 0; i < app.L.count && k < 3; i++)
-    if (app.L.objs[i].type == OT_COIN) {
-      if (game_used(&app.g, i)) coins_run |= (uint8_t)(1u << k);
-      k++;
-    }
+  for (unsigned k = 0; k < app.L.coin_count; k++)
+    if (game_used(&app.g, app.L.coin_obj[k])) coins_run |= (uint8_t)(1u << k);
   stars_new = false;
   if (!app.testing) {
     LevelStat *s = &progress.lv[app.level];

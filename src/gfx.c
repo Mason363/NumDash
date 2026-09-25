@@ -374,23 +374,60 @@ void gfx_sprite_ex(int spr, int x16, int y16, int ang16, int scale256, int flips
     if (i0 >= i1) continue;
     int32_t u = (int32_t)((uf + i0 * dudx) * 65536), v = (int32_t)((vf + i0 * dvdx) * 65536);
     uint16_t *p = pix(bx + i0, j);
+    const uint8_t *data = sm.data;
+    const int stride = sm.stride, fmt = s->fmt;
     for (int i = i0; i < i1; i++, p++, u += sdu, v += sdv) {
       int32_t uu = u + 65536, vv = v + 65536;          /* offset so that -1 < u maps to >= 0 */
       if (uu < 0 || vv < 0) continue;
       int ui = (uu >> 16) - 1, vi = (vv >> 16) - 1;
       unsigned fu = (unsigned)(uu >> 8) & 255, fv = (unsigned)(vv >> 8) & 255;
+      unsigned idx[4];
+      if (ui >= 0 && vi >= 0 && ui + 1 < W && vi + 1 < H) {
+        if (fmt == 1) {
+          const uint8_t *r0 = data + vi * stride + ui, *r1 = r0 + stride;
+          idx[0] = r0[0]; idx[1] = r0[1]; idx[2] = r1[0]; idx[3] = r1[1];
+        } else {
+          const uint8_t *r0 = data + vi * stride, *r1 = r0 + stride;
+          int b0 = ui >> 1, b1 = (ui + 1) >> 1, s0 = (ui & 1) * 4, s1 = ((ui + 1) & 1) * 4;
+          idx[0] = (r0[b0] >> s0) & 15; idx[1] = (r0[b1] >> s1) & 15;
+          idx[2] = (r1[b0] >> s0) & 15; idx[3] = (r1[b1] >> s1) & 15;
+        }
+      } else {
+        for (int k = 0; k < 4; k++) {
+          int x = ui + (k & 1), y = vi + (k >> 1);
+          if (x < 0 || y < 0 || x >= W || y >= H) { idx[k] = 0; continue; }
+          const uint8_t *row = data + y * stride;
+          idx[k] = fmt == 1 ? row[x] : (unsigned)((row[x >> 1] >> ((x & 1) * 4)) & 15);
+        }
+      }
+      if (idx[0] == idx[1] && idx[0] == idx[2] && idx[0] == idx[3]) {
+        /* uniform neighbourhood: no filtering needed */
+        unsigned ix = idx[0], a = fmt == 1 ? sm.a32[ix & 15] : sm.a32[ix];
+        if (!a) continue;
+        color_t c = fmt == 1 ? sm.col[ix >> 4] : sm.col[ix];
+        put(p, c, (a * al + 128) >> 8, mode);
+        continue;
+      }
+      unsigned w00 = (256 - fu) * (256 - fv) >> 8, w10 = fu * (256 - fv) >> 8, w01 = (256 - fu) * fv >> 8, w11 = fu * fv >> 8;
+      unsigned wt[4] = {w00, w10, w01, w11};
       unsigned ta = 0, tr = 0, tg = 0, tb = 0;
+      if (fmt == 0) {
+        /* A4: one colour, only coverage is filtered */
+        for (int k = 0; k < 4; k++) ta += sm.a32[idx[k]] * wt[k];
+        if (ta < 128) continue;
+        unsigned a32 = (ta * al + 32768) >> 16;
+        put(p, sm.col[0], a32 > 32 ? 32 : a32, mode);
+        continue;
+      }
       for (int k = 0; k < 4; k++) {
-        int x = ui + (k & 1), y = vi + (k >> 1);
-        if (x < 0 || y < 0 || x >= W || y >= H) continue;
-        unsigned wt = ((k & 1) ? fu : 256 - fu) * ((k >> 1) ? fv : 256 - fv) >> 8;
-        uint16_t c;
-        unsigned a = sample(&sm, x, y, &c) * wt;
+        unsigned ix = idx[k], a, cc;
+        if (fmt == 1) { a = sm.a32[ix & 15]; cc = sm.col[ix >> 4]; } else { a = sm.a32[ix]; cc = sm.col[ix]; }
+        a *= wt[k];
         if (!a) continue;
         ta += a;
-        tr += ((c >> 11) & 31) * a;
-        tg += ((c >> 5) & 63) * a;
-        tb += (c & 31) * a;
+        tr += ((cc >> 11) & 31) * a;
+        tg += ((cc >> 5) & 63) * a;
+        tb += (cc & 31) * a;
       }
       if (ta < 128) continue;
       color_t c = (color_t)(((tr / ta) << 11) | ((tg / ta) << 5) | (tb / ta));
@@ -672,23 +709,41 @@ void gfx_poly(const float *xy, int n, color_t c, unsigned alpha, int mode) {
   }
   int x = (int)floorf(mnx) - 1, y = (int)floorf(mny) - 1, w = (int)ceilf(mxx) - x + 2, h = (int)ceilf(mxy) - y + 2;
   if (!clip_rect(&x, &y, &w, &h)) return;
+  const unsigned full = a32_of(alpha);
   for (int j = y; j < y + h; j++) {
     uint16_t *p = pix(x, j);
     float py_ = j + .5f;
-    /* span of the row where every edge distance is > -0.5 */
-    float lo = (float)x, hi = (float)(x + w);
+    /* [lo, hi): every edge distance > -0.5 (touched); [flo, fhi): > 0.5 (fully covered) */
+    float lo = (float)x, hi = (float)(x + w), flo = lo, fhi = hi;
     bool empty = false;
     for (int k = 0; k < n && !empty; k++) {
-      float a = nx[k], d0 = ny[k] * py_ + nc[k] + .5f;   /* a*px + d0 > 0 */
-      if (a > 1e-6f) { float t = -d0 / a; if (t > lo) lo = t; }
-      else if (a < -1e-6f) { float t = -d0 / a; if (t < hi) hi = t; }
-      else if (d0 <= 0) empty = true;
+      float a = nx[k], d = ny[k] * py_ + nc[k];   /* distance at px is a*px + d */
+      if (a > 1e-6f) {
+        float t = (-.5f - d) / a, u = (.5f - d) / a;
+        if (t > lo) lo = t;
+        if (u > flo) flo = u;
+      } else if (a < -1e-6f) {
+        float t = (-.5f - d) / a, u = (.5f - d) / a;
+        if (t < hi) hi = t;
+        if (u < fhi) fhi = u;
+      } else {
+        if (d <= -.5f) empty = true;
+        if (d < .5f) fhi = flo - 1;
+      }
     }
     if (empty || hi <= lo) continue;
-    int i0 = (int)floorf(lo) - x, i1 = (int)ceilf(hi) - x;
+    int i0 = (int)floorf(lo - .5f) - x, i1 = (int)ceilf(hi + .5f) - x;
+    int f0 = (int)ceilf(flo - .5f) - x, f1 = (int)floorf(fhi - .5f) - x + 1;
     if (i0 < 0) i0 = 0;
     if (i1 > w) i1 = w;
+    if (f0 < i0) f0 = i0;
+    if (f1 > i1) f1 = i1;
+    if (f1 < f0) f1 = f0;
     for (int i = i0; i < i1; i++) {
+      if (i == f0 && f1 > f0) {
+        for (; i < f1; i++) put(p + i, c, full, mode);
+        if (i >= i1) break;
+      }
       float px_ = x + i + .5f, m = 1e9f;
       for (int k = 0; k < n; k++) { float d = nx[k] * px_ + ny[k] * py_ + nc[k]; if (d < m) m = d; }
       float cov = m + .5f;
