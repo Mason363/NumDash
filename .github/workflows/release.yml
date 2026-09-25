@@ -1,0 +1,47 @@
+name: Release
+# Publishes NumDash.nwa as a GitHub release. Runs when VERSION changes on
+# main (tag v<VERSION>), when a v* tag is pushed, or by hand.
+on:
+  push:
+    branches: ['main']
+    paths: ['VERSION']
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (created on the selected commit if missing)
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - run: npm ci
+      - run: make test
+      - run: make build check
+      - name: Package
+        run: |
+          cp build/numdash.nwa NumDash.nwa
+          sha256sum NumDash.nwa > NumDash.nwa.sha256
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then TAG="$INPUT_TAG"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"
+          else TAG="v$(tr -d '[:space:]' < VERSION)"; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" NumDash.nwa NumDash.nwa.sha256 --clobber
+            gh release edit "$TAG" --notes-file docs/RELEASE_NOTES.md
+          else
+            gh release create "$TAG" NumDash.nwa NumDash.nwa.sha256 --target "$GITHUB_SHA" \
+              --title "NumDash $TAG" --notes-file docs/RELEASE_NOTES.md --latest
+          fi

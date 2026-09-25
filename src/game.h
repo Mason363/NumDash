@@ -1,75 +1,69 @@
 #ifndef NUMDASH_GAME_H
 #define NUMDASH_GAME_H
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
+#include "level.h"
 
 #define ND_HZ 240
-#define ND_BUILTINS 7
-#define ND_SLOTS 3
-#define ND_CUSTOM_MAX 384
-#define ND_MAX_OBJECTS 4096
-#define ND_USED_BYTES (ND_MAX_OBJECTS / 8)
-
-/* Coordinates are original Geometry Dash units, 30 units per block. */
-typedef struct {
-  int16_t x, y;
-  uint16_t id;
-  uint8_t rot, flags;
-  uint16_t color, duration;
-} Object;
-typedef struct {
-  const char *name, *credit;
-  const Object *objects;
-  uint16_t count, length, background, ground;
-  uint8_t difficulty, bpm;
-} Level;
-extern const Level nd_levels[ND_BUILTINS];
-
-typedef enum { DECOR, SOLID, HAZARD, PAD, ORB, GRAVITY, PORTAL, COIN, COLOR } Kind;
-typedef struct { float w, h; Kind kind; } Shape;
-Shape object_shape(const Object *o);
-bool level_valid(const Level *level);
-unsigned level_lower_bound(const Level *l, float x);
+#define ND_DT (1.0f / ND_HZ)
+enum { MODE_CUBE = 0, MODE_SHIP = 1 };
+enum { BUF_NONE = 0, BUF_READY = 1, BUF_END = 2 };
+/* Visible world: 480 x 360 GD units (20 px blocks); ground sits 90 units
+ * above the bottom edge when the camera is at rest, as in GD. */
+#define VIEW_W 480.0f
+#define VIEW_H 360.0f
+#define GROUND_OFFSET 90.0f
+#define PLAYER_SCREEN_X 150.0f
 
 typedef struct {
-  float x, y, vy, camera_y, floor, ceiling;
-  uint32_t tick;
-  uint16_t jumps;
-  uint16_t first, death_object, bg, ground, bg_from, ground_from;
-  uint16_t bg_target, ground_target, bg_time, ground_time, bg_elapsed, ground_elapsed;
-  uint8_t used[ND_USED_BYTES];
-  uint8_t mode, coins, rotation;
-  bool inverted, grounded, dead, complete, held, orb_armed;
+  float x, y, vy, gravity, rot, target_rot, time_since_ground, ceil_inv;
+  float ground_y, ceiling_y, snap_diff;
+  int32_t snap_frame, frame, coyote;
+  int16_t snap_obj;
+  uint8_t mode, speed, buffer;
+  bool upside, on_ground, on_ceiling, vel_override, snap_rot, left_ground, inverse_rot, jumped, rot_dir_neg;
 } Player;
-void player_start(Player *p, const Level *l);
-void player_step(Player *p, const Level *l, bool down);
-int player_progress(const Player *p, const Level *l);
-bool player_used(const Player *p, unsigned i);
-uint16_t color_mix(uint16_t a, uint16_t b, unsigned n, unsigned d);
+
+typedef struct { uint8_t cur[3], from[3], to[3]; uint16_t t, dur; } Channel; /* t, dur in steps */
+
+enum { FX_JUMP, FX_LAND, FX_PAD, FX_ORB, FX_PORTAL, FX_COIN, FX_DEATH, FX_GRAVITY, FX_ORB_TOUCH, FX_WALL };
+typedef struct { uint8_t kind, arg; int16_t obj; float x, y; } FxEvent;
 
 typedef struct {
-  Object objects[ND_CUSTOM_MAX];
-  uint16_t count, length;
-  uint8_t theme, bpm;
-} CustomLevel;
-typedef struct {
-  uint8_t best[ND_BUILTINS + ND_SLOTS], practice[ND_BUILTINS + ND_SLOTS];
-  uint8_t coins[ND_BUILTINS + ND_SLOTS], effects, percent, fps;
-  uint32_t attempts[ND_BUILTINS + ND_SLOTS];
-  CustomLevel custom[ND_SLOTS];
-} SaveData;
-void save_defaults(SaveData *s);
-size_t save_encode(const SaveData *s, uint8_t *out, size_t cap);
-bool save_decode(SaveData *s, const uint8_t *data, size_t size);
-uint32_t nd_crc32(const uint8_t *data, size_t size);
-Level custom_level(const CustomLevel *c, unsigned slot);
-bool editor_put(CustomLevel *c, Object o);
-bool editor_remove(CustomLevel *c, int x, int y);
+  Player p;
+  const Level *L;
+  float cam_x, cam_y, ground_x, bg_x, ground_gfx, cam_intended_y, wall_y, end_t, end_x0, end_y0, cam_wall_t;
+  float cam_wall_y0, bg_wall_x0, ground_wall_x0, shake_t, shake_amp;
+  Channel ch[CH_COUNT];
+  uint32_t tick;
+  uint16_t next_event, jumps, death_obj;
+  uint8_t fade_effect, coins, attempt_camera, touch_done[8];
+  bool trail, dead, complete, ending, hold_prev, pressed_prev, old_on_ground, orb_touching;
+  bool menu_camera;   /* fixed camera, ground scrolling on its own (main menu) */
+  uint8_t used[MAX_OBJECTS / 8];
+  FxEvent fx[24];
+  uint8_t fx_count;
+} Game;
 
-/* Validates the entire record arena before reading or modifying it. */
-bool storage_read(const uint8_t *arena, size_t size, const char *name,
-                  const uint8_t **data, size_t *len);
-bool storage_write(uint8_t *arena, size_t size, const char *name,
-                   const uint8_t *data, size_t len);
+/* Practice checkpoint: everything needed to resume from a point. */
+typedef struct {
+  Player p;
+  float cam_x, cam_y, ground_x, bg_x, ground_gfx, cam_intended_y;
+  Channel ch[CH_COUNT];
+  uint32_t tick;
+  uint16_t next_event, jumps;
+  uint8_t fade_effect, touch_done[8];
+  bool trail;
+} Checkpoint;
+
+void game_start(Game *g, const Level *L, bool first_attempt);
+void game_step(Game *g, bool hold);
+float game_progress(const Game *g);
+bool game_used(const Game *g, unsigned i);
+void game_save_checkpoint(const Game *g, Checkpoint *c);
+void game_load_checkpoint(Game *g, const Checkpoint *c);
+unsigned game_coin_index(const Level *L, unsigned obj);
+/* World -> screen helpers (floating point pixels). */
+static inline float wx_to_sx(const Game *g, float x) { return (x - g->cam_x) * (2.0f / 3.0f); }
+static inline float wy_to_sy(const Game *g, float y) { return 240.0f - (GROUND_OFFSET + y - g->cam_y) * (2.0f / 3.0f); }
 #endif
