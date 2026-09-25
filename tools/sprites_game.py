@@ -468,23 +468,40 @@ def cube_layers():
 
 
 def ship_layers():
-    """Default ship: primary hull and secondary canopy. Anchor = ship centre."""
-    p = Art(px(40) + 1, px(26) + 1)
-    s = Art(px(40) + 1, px(26) + 1)
-    hull = [(-18, -2), (-12, -8), (10, -8), (18, -3), (18, 2), (8, 5), (-12, 5), (-18, 1)]
-    nose_cut = [(18, -3), (18, 2), (15, 0)]
-    fin = [(-17, 2), (-13, 10), (-9, 10), (-10, 3)]
-    p.paint(p.poly_mask(hull), BLACK, 1.0)
-    inner = inset_polygon(hull[::-1], 1.6)[::-1]
-    p.paint(p.poly_mask(inner), WHITE, 1.0)
-    # panel lines
-    for x in (-6.0, 4.0):
-        p.paint(p.rect_mask(x, -6.5, x + 1.2, 3.5), BLACK, 0.9)
-    p.paint(p.poly_mask(fin), BLACK, 1.0)
-    p.paint(p.poly_mask(inset_polygon(fin[::-1], 1.2)[::-1]), WHITE, 1.0)
-    p.paint(p.rect_mask(-16, -6, -12, -1), (0.6, 0.6, 0.6), 1.0)
-    # secondary: canopy stripe along the upper hull
-    s.paint(s.poly_mask([(-9, 1), (7, 1), (12, -1.5), (-9, -1.5)]), WHITE, 1.0)
+    """Default ship in the layout of Geometry Dash's first ship: a long hull
+    with panel lines and a rounded nose, an exhaust block at the back, and a
+    sloped deck with a tail fin in the secondary colour. Drawn in a 37 x 23
+    unit box (x right, y down) centred on the anchor."""
+    p = Art(px(38) + 2, px(24) + 2)
+    s = Art(px(38) + 2, px(24) + 2)
+
+    def poly(pts):
+        return [(x - 18.5, 11.5 - y) for x, y in pts]
+
+    hull = poly([(4, 10.5), (30, 10.5), (34.5, 11.5), (36.8, 13.2), (36.8, 16.8), (34.5, 19), (4, 19)])
+    exhaust = poly([(0.2, 9.8), (5, 9.8), (5, 18.6), (0.2, 18.6)])
+    thruster = poly([(3.6, 18), (9.6, 18), (8.6, 21.4), (4.6, 21.4)])
+    deck = poly([(5, 4.6), (18, 4.4), (27, 6.2), (32, 8.4), (35, 11.5), (5, 11.5)])
+    fin = poly([(6.2, 0.1), (11.2, 0.1), (11.2, 5.5), (6.2, 5.5)])
+    w = 1.6
+    for shape in (fin, deck, exhaust, thruster, hull):
+        p.paint(p.poly_mask(shape), BLACK, 1.0)
+    fin_in, deck_in = inset_polygon(fin[::-1], w)[::-1], inset_polygon(deck[::-1], w)[::-1]
+    p.erase(p.poly_mask(fin_in))
+    p.erase(p.poly_mask(deck_in))
+    p.paint(p.poly_mask(inset_polygon(exhaust[::-1], w)[::-1]), (0.62, 0.62, 0.62), 1.0)
+    p.paint(p.poly_mask(inset_polygon(thruster[::-1], w)[::-1]), (0.5, 0.5, 0.5), 1.0)
+    hull_in = inset_polygon(hull[::-1], w)[::-1]
+    p.paint(p.poly_mask(hull_in), WHITE, 1.0)
+    # soft shade along the bottom of the hull, then the panel lines
+    u, v = p.grid()
+    shade = np.clip((-(v) - 3.2) / 4.0, 0, 1) * p.poly_mask(hull_in)
+    p.paint(shade, (0.72, 0.72, 0.72), 0.8)
+    for x in (12.2, 25.2):
+        p.paint(p.poly_mask(poly([(x - 0.8, 11), (x + 0.8, 11), (x + 0.8, 18.5), (x - 0.8, 18.5)])), BLACK, 1.0)
+    s.paint(np.maximum(s.poly_mask(fin_in), s.poly_mask(deck_in)), WHITE, 1.0)
+    # a lighter band on the deck like the original's highlight
+    s.paint(s.poly_mask(poly([(7, 8.2), (18, 8.0), (27, 9.0), (30, 10.0), (7, 10.0)])), (0.8, 0.8, 0.8), 0.45)
     return p, s
 
 
