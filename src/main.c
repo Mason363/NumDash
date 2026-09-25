@@ -10,18 +10,22 @@ int main(int argc,char **argv) {
   (void)argc;(void)argv;
   if(!platform_init())return 1;
   app_init();
+#if PLATFORM_DEVICE
+  const unsigned render_hz=30; /* The N0120 LCD refreshes at 40 Hz. */
+#else
+  const unsigned render_hz=60;
+#endif
   uint32_t previous=platform_millis(),accumulator=0,render_acc=1000,fps_start=previous,frames=0;
   uint32_t last_keys=0,pending_keys=0;
   while(app.running) {
     uint32_t now=platform_millis(),elapsed=now-previous;previous=now;
-    /* An OS stall must not simulate unseen hazards. Ordinary rendering
-     * overruns catch up without changing the movement speed. */
-    if(elapsed>100) {elapsed=0;if(app.screen==PLAY&&!app.player.dead){app.screen=PAUSE;app.menu=2;}}
-    accumulator+=elapsed*ND_HZ;render_acc+=elapsed*60;
+    /* Never advance far past a hazard that has not been shown on the LCD. */
+    if(elapsed>50)elapsed=50;
+    accumulator+=elapsed*ND_HZ;render_acc+=elapsed*render_hz;
     uint32_t keys=platform_keys();
     pending_keys|=keys&~last_keys;
     last_keys=keys;
-    while(accumulator>=1000){app_tick(keys|pending_keys);pending_keys=0;accumulator-=1000;}
+    while(accumulator>=1000){bool last=accumulator<2000;app_tick(keys|(last?pending_keys:0));if(last)pending_keys=0;accumulator-=1000;}
     if(render_acc>=1000){app_render();platform_present(frame,palette);render_acc%=1000;frames++;}
     if(now-fps_start>=1000){app.fps=frames*1000/(now-fps_start);frames=0;fps_start=now;}
     platform_sleep(1);

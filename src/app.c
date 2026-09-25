@@ -10,9 +10,10 @@ static const char *brush_names[]={"BLOCK","SPIKE","FLOOR SPIKES","HALF BLOCK","J
 static void screen(Screen s){app.screen=s;app.screen_time=app.time;app.menu=0;}
 static void notify(const char *s){strncpy(app.notice,s,sizeof(app.notice)-1);app.notice[sizeof(app.notice)-1]=0;app.notice_until=app.time+720;}
 void app_save(void) {
+  if(!app.dirty&&app.loaded){app.save_ok=true;return;}
   size_t n=save_encode(&app.save,save_buffer,sizeof(save_buffer));
   app.save_ok=n && platform_save(save_buffer,n);
-  if(app.save_ok) app.dirty=false;
+  if(app.save_ok){app.dirty=false;app.loaded=true;}
 }
 void app_init(void) {
   memset(&app,0,sizeof(app)); save_defaults(&app.save);app.running=true;
@@ -226,7 +227,9 @@ static void world(bool editing) {
   if(editing){custom=custom_level(&app.save.custom[app.slot],app.slot);l=&custom;camera=app.cursor_x-180;if(camera<0)camera=0;cy=app.cursor_y>210?app.cursor_y-210:0;}
   else {camera=app.player.x-115;if(camera<-70)camera=-70;cy=app.player.camera_y;}
   gfx_palette(editing?l->background:app.player.bg,editing?l->ground:app.player.ground,0);
-  backdrop((int)(camera*.6f),app.time,false);
+  /* A moving full-screen backdrop forces an LCD transfer of every tile.
+   * Keep the geometric pattern fixed while the hazards and player scroll. */
+  backdrop(0,app.time,false);
   int base_floor=editing?158:184;
   int floor_y=base_floor+(int)(cy*.6f);
   if(editing){for(int x=-((int)(camera*.6f)%18+18)%18;x<320;x+=18)line(x,0,x,177,C_INK);for(int y=((floor_y%18)+18)%18;y<178;y+=18)line(0,y,319,y,C_INK);}
@@ -241,7 +244,7 @@ static void world(bool editing) {
   unsigned beat_ticks=14400u/(l->bpm?l->bpm:120);
   unsigned beat_phase=(editing?app.time:app.player.tick)%beat_ticks;
   if(app.save.effects&&beat_phase<12)rect(0,floor_y-2,320,2,C_GLOW);
-  for(int x=-((int)(camera*.6f)%38);x<320;x+=38)outline(x,floor_y+8,37,40,C_GROUND2);
+  for(int x=0;x<320;x+=38)outline(x,floor_y+8,37,40,C_GROUND2);
   int finish=(int)((l->length-camera)*.6f);if(finish<320){rect(finish,28,3,180,C_WHITE);for(int y=30;y<208;y+=12)rect(finish+3,y,6,6,C_LIME);}
   if(editing){
     int x=(int)((app.cursor_x-camera)*.6f),y=base_floor+(int)(cy*.6f)-(int)(app.cursor_y*.6f);

@@ -111,7 +111,7 @@ void object_draw(const Object *o,int x,int y,bool used) {
     outline(left,top,w,h,C_WHITE);return;
   }
   if(sh.kind==HAZARD) {
-    if(o->id==9){rect(x-9,y-2,18,3,C_BLACK);line(x-9,y-3,x+8,y-3,C_WHITE);}
+    if(o->id==9)spike(x,y-6,8,o->rot,C_WHITE);
     else spike(x,y,o->id==39?5:9,o->rot,C_WHITE);return;
   }
   if(sh.kind==PORTAL||sh.kind==GRAVITY) {

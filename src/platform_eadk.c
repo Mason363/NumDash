@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "game.h"
+#include "present.h"
 #include <eadk.h>
 #include <string.h>
 
@@ -21,20 +22,19 @@ static uint32_t scan_keys(void) {
 static uint32_t last_scan,captured;
 static void capture_keys(void){uint32_t now=scan_keys();captured|=now&~last_scan;last_scan=now;}
 uint32_t platform_keys(void){capture_keys();uint32_t out=last_scan|captured;captured=0;return out;}
+static void push_region(int x,int y,int w,int h,const uint8_t *pixels,
+                        const uint16_t *colors,void *context) {
+  uint16_t *strip=(uint16_t *)context;
+  capture_keys();
+  present_expand_region(pixels,colors,x,y,w,h,strip);
+  eadk_display_push_rect((eadk_rect_t){(uint16_t)x,(uint16_t)y,(uint16_t)w,(uint16_t)h},strip);
+}
 void platform_present(const uint8_t *pixels,const uint16_t *colors) {
-  static uint16_t strip[320*8];
-  static uint32_t old_hash[30];
-  static uint16_t old_palette[16];
-  bool palette_changed=memcmp(old_palette,colors,sizeof(old_palette))!=0;
-  for(int y=0;y<240;y+=8){
-    if((y&31)==0)capture_keys();
-    uint32_t hash=2166136261u;
-    const uint8_t *p=pixels+y*160;
-    for(int i=0;i<160*8;i++){uint8_t b=p[i];strip[i*2]=colors[b&15];strip[i*2+1]=colors[b>>4];hash=(hash^b)*16777619u;}
-    if(palette_changed||hash!=old_hash[y/8])eadk_display_push_rect((eadk_rect_t){0,(uint16_t)y,320,8},strip);
-    old_hash[y/8]=hash;
-  }
-  memcpy(old_palette,colors,sizeof(old_palette));
+  static uint16_t strip[ND_SCREEN_W*ND_TILE_H];
+  static PresentCache cache;
+  capture_keys();
+  present_plan(&cache,pixels,colors,push_region,strip);
+  capture_keys();
 }
 
 /* Only the documented Epsilon record buffer is writable here. A SlotInfo

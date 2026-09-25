@@ -50,6 +50,13 @@ uint16_t color_mix(uint16_t a, uint16_t b, unsigned n, unsigned d) {
   unsigned bl=((a&31)*(d-n)+(b&31)*n)/d;
   return (uint16_t)((r<<11)|(g<<5)|bl);
 }
+/* RGB565 palette changes require repainting the LCD. Limit smooth color
+ * triggers to at most four steps per second while preserving their duration. */
+static uint16_t display_color(uint16_t from,uint16_t to,unsigned elapsed,unsigned duration) {
+  if(!duration||elapsed>=duration)return to;
+  unsigned steps=duration/60;if(!steps)steps=1;if(steps>16)steps=16;
+  return color_mix(from,to,elapsed*steps/duration,steps);
+}
 void player_start(Player *p, const Level *l) {
   memset(p,0,sizeof(*p));
   p->y=15; p->grounded=true; p->ceiling=300;
@@ -153,8 +160,8 @@ void player_step(Player *p, const Level *l, bool down) {
   p->camera_y+=(target-p->camera_y)*0.025f;
   if(p->bg_elapsed<p->bg_time) p->bg_elapsed++;
   if(p->ground_elapsed<p->ground_time) p->ground_elapsed++;
-  p->bg=color_mix(p->bg_from,p->bg_target,p->bg_elapsed,p->bg_time);
-  p->ground=color_mix(p->ground_from,p->ground_target,p->ground_elapsed,p->ground_time);
+  p->bg=display_color(p->bg_from,p->bg_target,p->bg_elapsed,p->bg_time);
+  p->ground=display_color(p->ground_from,p->ground_target,p->ground_elapsed,p->ground_time);
   p->held=down;
 }
 

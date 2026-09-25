@@ -3,7 +3,7 @@ CC = cc
 PYTHON ?= python3
 NWLINK = node node_modules/nwlink/bin/nwlink
 WARN = -Wall -Wextra -Werror -Wno-misleading-indentation
-COMMON = src/game.c src/save.c src/levels.c src/draw.c src/app.c
+COMMON = src/game.c src/save.c src/levels.c src/draw.c src/present.c src/app.c
 DEVICE_SOURCES = $(COMMON) src/platform_eadk.c src/main.c
 DEVICE_OBJECTS = $(patsubst src/%.c,build/arm/%.o,$(DEVICE_SOURCES))
 HEADERS = $(wildcard src/*.h)
@@ -36,6 +36,7 @@ build/tests: $(COMMON) tests/test.c $(HEADERS) | build/.stamp
 	$(CC) -std=c11 -O1 -g $(WARN) -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc $(COMMON) tests/test.c -o $@
 test: build/tests
 	./build/tests
+	@for i in 1 2 3 4 5 6 7; do ./build/tests --replay $$((i-1)) tests/replays/level$$i.txt || exit 1; done
 run: simulator
 	./build/numdash-sim
 # Builds a native module for the official Epsilon simulator (nwlink >= 0.0.19).

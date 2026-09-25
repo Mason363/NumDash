@@ -16,9 +16,9 @@ void save_defaults(SaveData *s) {
 }
 size_t save_encode(const SaveData *s,uint8_t *out,size_t cap) {
   size_t need=16+10*7+4+ND_SLOTS*6;
-  for(int i=0;i<ND_SLOTS;i++) { if(s->custom[i].count>ND_CUSTOM_MAX) return 0; need+=s->custom[i].count*12; }
+  for(int i=0;i<ND_SLOTS;i++) { if(s->custom[i].count>ND_CUSTOM_MAX) return 0; need+=s->custom[i].count*8; }
   if(cap<need) return 0;
-  memcpy(out,"NDASH002",8); wr32(out+8,(uint32_t)need);
+  memcpy(out,"NDASH003",8); wr32(out+8,(uint32_t)need);
   size_t n=16;
   for(int i=0;i<10;i++) { out[n++]=s->best[i]; out[n++]=s->practice[i]; out[n++]=s->coins[i]; wr32(out+n,s->attempts[i]); n+=4; }
   out[n++]=s->effects; out[n++]=s->percent; out[n++]=s->fps; out[n++]=0;
@@ -26,24 +26,28 @@ size_t save_encode(const SaveData *s,uint8_t *out,size_t cap) {
     const CustomLevel *c=&s->custom[i]; wr16(out+n,c->count); wr16(out+n+2,c->length); out[n+4]=c->theme; out[n+5]=c->bpm; n+=6;
     for(unsigned j=0;j<c->count;j++) {
       const Object *o=&c->objects[j]; wr16(out+n,(uint16_t)o->x); wr16(out+n+2,(uint16_t)o->y); wr16(out+n+4,o->id);
-      out[n+6]=o->rot; out[n+7]=o->flags; wr16(out+n+8,o->color); wr16(out+n+10,o->duration); n+=12;
+      out[n+6]=o->rot; out[n+7]=o->flags; n+=8;
     }
   }
   wr32(out+12,nd_crc32(out+16,n-16)); return n;
 }
 bool save_decode(SaveData *s,const uint8_t *in,size_t size) {
-  if(size<108 || memcmp(in,"NDASH002",8) || rd32(in+8)!=size || nd_crc32(in+16,size-16)!=rd32(in+12)) return false;
+  if(size<108)return false;
+  bool legacy=!memcmp(in,"NDASH002",8);
+  if(!legacy&&memcmp(in,"NDASH003",8))return false;
+  if(rd32(in+8)!=size || nd_crc32(in+16,size-16)!=rd32(in+12)) return false;
+  unsigned stride=legacy?12:8;
   /* Validate before touching the live save; avoids a second 14 KB copy. */
   for(size_t n=16;n<86;n+=7) if(in[n]>100||in[n+1]>100||in[n+2]>3) return false;
-  if(in[86]>1||in[87]>5||in[88]>1) return false;
+  if(in[86]>1||in[87]>(legacy?5:1)||in[88]>1) return false;
   size_t n=90;
   for(int i=0;i<ND_SLOTS;i++) {
     if(n+6>size) return false;
     unsigned count=rd16(in+n),length=rd16(in+n+2);
     if(count>ND_CUSTOM_MAX||length<300||length>32000||in[n+4]>5||in[n+5]<60||in[n+5]>200) return false;
     n+=6; int last=-1;
-    for(unsigned j=0;j<count;j++,n+=12) {
-      if(n+12>size) return false;
+    for(unsigned j=0;j<count;j++,n+=stride) {
+      if(n+stride>size) return false;
       int x=(int16_t)rd16(in+n),y=(int16_t)rd16(in+n+2);
       if(x<last||x<0||x>(int)length||y<0||y>1200||in[n+6]>3) return false;
       last=x;
@@ -52,10 +56,10 @@ bool save_decode(SaveData *s,const uint8_t *in,size_t size) {
   if(n!=size) return false;
   save_defaults(s); n=16;
   for(int i=0;i<10;i++) { s->best[i]=in[n++]; s->practice[i]=in[n++]; s->coins[i]=in[n++]; s->attempts[i]=rd32(in+n); n+=4; }
-  s->effects=in[n++]; s->percent=in[n++];if(s->percent>1)s->percent=1; s->fps=in[n++]; n++;
+  s->effects=in[n++]; s->percent=legacy?1:in[n];n++; s->fps=in[n++]; n++;
   for(int i=0;i<ND_SLOTS;i++) {
     CustomLevel *c=&s->custom[i]; c->count=(uint16_t)rd16(in+n); c->length=(uint16_t)rd16(in+n+2); c->theme=in[n+4]; c->bpm=in[n+5]; n+=6;
-    for(unsigned j=0;j<c->count;j++,n+=12) c->objects[j]=(Object){(int16_t)rd16(in+n),(int16_t)rd16(in+n+2),(uint16_t)rd16(in+n+4),in[n+6],in[n+7],(uint16_t)rd16(in+n+8),(uint16_t)rd16(in+n+10)};
+    for(unsigned j=0;j<c->count;j++,n+=stride) c->objects[j]=(Object){(int16_t)rd16(in+n),(int16_t)rd16(in+n+2),(uint16_t)rd16(in+n+4),in[n+6],in[n+7],legacy?(uint16_t)rd16(in+n+8):0,legacy?(uint16_t)rd16(in+n+10):0};
   }
   return true;
 }
