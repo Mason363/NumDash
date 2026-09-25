@@ -46,7 +46,7 @@ Progress, settings and icon colours live in one 192-byte record, `numdash.nds`; 
 
 ## Performance
 
-The screen is rendered in 24-line strips straight to the LCD (15 KB of buffer instead of a 150 KB framebuffer), and strips that did not change are not sent. Physics runs at a fixed 240 Hz independent of the frame rate, and short key presses made while a frame is being sent are still registered. When a frame fits in the LCD refresh, the app waits for the vertical blank to avoid tearing. The app uses about 115 KB of RAM and 160 KB of flash. The **Low detail** setting removes decorations and glow.
+The screen is rendered in 24-line strips straight to the LCD (15 KB of buffer instead of a 150 KB framebuffer), and strips that did not change are not sent. Physics runs at a fixed 240 Hz independent of the frame rate, and short key presses made while a frame is being sent are still registered. When a frame fits in the LCD refresh, the app waits for the vertical blank to avoid tearing. The app uses about 115 KB of RAM and 165 KB of flash. Counted on an ARM emulator, a gameplay frame takes about 2 million instructions, the menus about 4.5 million and the busiest moment of the level-complete sequence about 7 million, which leaves room for 40 frames per second on the N0120. The **Low detail** setting removes decorations and glow.
 
 ## Build
 

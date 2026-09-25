@@ -467,8 +467,53 @@ static int shots(const char *dir) {
   return 0;
 }
 
+/* ------------------------------------------------------------ monkey */
+
+/* Random input across every screen, drawing every frame, with storage that
+ * is either empty or nearly full of other records. */
+static int monkey(unsigned seed, long ticks) {
+  static const uint32_t keys[] = {K_LEFT, K_RIGHT, K_UP, K_DOWN, K_OK, K_EXE, K_BACK, K_TOOL, K_SHIFT, K_ERASE,
+                                  K_SAVE, K_UNDO, K_CHECK, K_PLUS, K_MINUS, K_COPY, K_PROPS};
+  uint32_t r = seed * 2654435761u + 1;
+  memset(store, 0, sizeof(store));
+  if (seed & 1) {
+    /* fill all but a few hundred bytes with other apps' records */
+    static uint8_t junk[2000];
+    char name[16];
+    for (int i = 0; ; i++) {
+      snprintf(name, sizeof(name), "junk%d.py", i);
+      if (!storage_put(store, sizeof(store) - 600, name, junk, sizeof(junk), 1)) break;
+    }
+  }
+  app_init();
+  uint32_t held = 0;
+  unsigned restarts = 0;
+  static long visits[8];
+  memset(visits, 0, sizeof(visits));
+  for (long t = 0; t < ticks; t++) {
+    visits[app.screen & 7]++;
+    r ^= r << 13; r ^= r >> 17; r ^= r << 5;
+    if (r % 40 == 0) held = 0;
+    if (r % 23 == 0) held ^= keys[(r >> 8) % (sizeof(keys) / sizeof(keys[0]))];
+    /* mostly hold jump while playing so levels progress */
+    uint32_t k = held;
+    if (app.screen == SCR_PLAY && (r >> 20) % 3 == 0) k |= K_OK;
+    /* leave long play sessions through Home so every screen gets visited */
+    static long in_play;
+    in_play = app.screen == SCR_PLAY ? in_play + 1 : 0;
+    if (in_play > 240 * 15) { k = K_HOME; in_play = 0; }
+    run(k, 1);
+    if (!app.running) { app_init(); restarts++; }
+  }
+  printf("monkey %u: %ld ticks, %u quits; ticks per screen: menu %ld select %ld play %ld garage %ld creator %ld editor %ld loading %ld\n",
+         seed, ticks, restarts, visits[SCR_MENU], visits[SCR_SELECT], visits[SCR_PLAY], visits[SCR_GARAGE], visits[SCR_CREATOR],
+         visits[SCR_EDITOR], visits[SCR_LOADING]);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 4 && !strcmp(argv[1], "--replay")) return replay(atoi(argv[2]), argv[3]);
+  if (argc == 4 && !strcmp(argv[1], "--monkey")) return monkey((unsigned)atoi(argv[2]), atol(argv[3]));
   if (argc == 3 && !strcmp(argv[1], "--shots")) return shots(argv[2]);
   test_levels();
   test_physics();

@@ -41,6 +41,8 @@ build/tests: $(COMMON) tests/test.c $(HEADERS) | build/.stamp
 test: build/tests
 	./build/tests
 	@for i in 1 2 3 4 5 6 7; do ./build/tests --replay $$((i-1)) tests/replays/level$$i.txt || exit 1; done
+	./build/tests --monkey 1 60000
+	./build/tests --monkey 2 60000
 run: simulator
 	./build/numdash-sim
 # Native module for the official Epsilon simulator (nwlink >= 0.0.19).

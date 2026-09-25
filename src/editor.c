@@ -95,6 +95,7 @@ void editor_open(int slot) {
   }
   app.testing = false;
   settings_open = false;
+  fx_reset();
   fill_level(&edit_level, slot, &meta, count);
 }
 

@@ -35,7 +35,7 @@ extern const int bench_ticks[], bench_vals[], bench_n;
 
 static int bench(int scenario, int frames) {
   app_init();
-  run(0, 240);
+  run(0, 240 * 3);   /* past the loading screen */
   if (scenario >= 1) {
     app.level = 0; app.practice = false; app.testing = false;
     app_go(SCR_PLAY);
