@@ -1,7 +1,10 @@
 name: Release
-# Pushing a tag such as v2.0.0 builds, tests and publishes NumDash.nwa.
+# Publishes NumDash.nwa as a GitHub release. Runs when VERSION changes on the
+# development branch (tag v<VERSION>), when a v* tag is pushed, or by hand.
 on:
   push:
+    branches: ['claude/admiring-carson-w3n1t6']
+    paths: ['VERSION']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -30,12 +33,15 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
         run: |
-          notes=docs/RELEASE_NOTES.md
+          if [ -n "$INPUT_TAG" ]; then TAG="$INPUT_TAG"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then TAG="$GITHUB_REF_NAME"
+          else TAG="v$(tr -d '[:space:]' < VERSION)"; fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" NumDash.nwa NumDash.nwa.sha256 --clobber
+            gh release edit "$TAG" --notes-file docs/RELEASE_NOTES.md
           else
             gh release create "$TAG" NumDash.nwa NumDash.nwa.sha256 --target "$GITHUB_SHA" \
-              --title "NumDash $TAG" --notes-file "$notes"
+              --title "NumDash $TAG" --notes-file docs/RELEASE_NOTES.md --latest
           fi
