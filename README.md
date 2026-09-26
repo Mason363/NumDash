@@ -1,6 +1,4 @@
-> [!IMPORTANT]
-> # NumDash is now part of [NumPlay](https://github.com/Mason363/NumPlay)
-> **NumPlay is newer and more actively maintained**: a collection of NumWorks games in one app, with the latest fixes to NumDash. Every game is still available on its own: **[download NumDash.nwa](https://github.com/Mason363/NumPlay/releases/latest/download/NumDash.nwa)**.
+# This version may be outdated. Check out [NumPlay](https://github.com/Mason363/NumPlay) for the most up-to-date version.
 
 # NumDash
 
