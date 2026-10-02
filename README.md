@@ -91,3 +91,7 @@ make run           # desktop version (arrow keys, Space to jump, Esc to go back)
 ```
 
 `make assets` and `make levels` rebuild the graphics and level data (Python 3 with numpy and Pillow). Changing the `VERSION` file on `main` publishes a new release automatically.
+
+## License
+
+NumDash is licensed under the [GNU General Public License v3.0](LICENSE). Copyright (c) 2026 Mason Chen. The fonts keep their own licenses ([LICENSES](LICENSES)).
